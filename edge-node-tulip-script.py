@@ -1,7 +1,6 @@
 from tulip import tlp
 import math
 
-EDGE_OFFSET = 0.1
 EPSILON = 1e-6
 
 def main(graph):
@@ -30,11 +29,8 @@ def main(graph):
   # The overlap area between a line segment ab and a circle with center c and radius r
   def crossLineSegmentAndCircle(a, b, c, r):
       d = distFromPointToSegment(c, a, b)
-      if d - r < EPSILON:
-          intersectLength = math.sqrt(r ** 2 - d ** 2)
-          return intersectLength * EDGE_OFFSET
-      else:
-          return 0
+      return math.sqrt(r ** 2 - d ** 2) if r - d > EPSILON else 0
+    
   
   def getNodeOverlap(e, v):
       s = viewLayout[graph.source(e)]
@@ -48,7 +44,7 @@ def main(graph):
       return crossLineSegmentAndCircle(s, t, bc[0], bc[0].dist(bc[1]))
  
   def getSubGraphPenalty(e, g):
-      print '\t',e, g
+      # print '\t',e, g
       sum = getSubGraphOverlap(e, g)
       for s in g.getDescendantGraphs():
           sum += getSubGraphOverlap(e, s)
