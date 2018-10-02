@@ -77,8 +77,9 @@ def get_linear_decay_func(k, h):
 class MultiLevelMetrics:
 
     def __init__(self, graph, penalty_func_type = 'piecewise-linear', angle_penalty_func_type = 'linear',
-                 hierarchical_weight_func_type = 'uniform'):
+                 hierarchical_weight_func_type = 'uniform', debug=False):
         self.graph = graph
+        self.debug = debug
         self.view_layout = graph.getLayoutProperty('viewLayout')
         self.view_size = graph.getSizeProperty('viewSize')
 
@@ -130,9 +131,10 @@ class MultiLevelMetrics:
         center, radius = self.get_bounding_circle(v)
         o = cross_line_segment_and_circle(s, t, center, radius)
         if o > 0:
-            max_overlap = min(math.sqrt(dist2(s, t)), radius * 2)
+            max_overlap = min(dist(s, t), radius * 2)
             p = self.penalty_func(o, max_overlap)
-            print '(meta-)node {} overlaps with edge {} (overlap area: {}, penalty: {})'.format(v, e, o, p)
+            if self.debug:
+                print '(meta-)node {} overlaps with edge {} (overlap area: {}, penalty: {})'.format(v, e, o, p)
             return p
         else:
             return 0
@@ -147,7 +149,8 @@ class MultiLevelMetrics:
             size1 = math.pi * r1 ** 2
             size2 = math.pi * r2 ** 2
             p = self.penalty_func(o, min(size1, size2))
-            print '(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'.format(v1, v2, o, p)
+            if self.debug:
+                print '(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'.format(v1, v2, o, p)
             return p
         else:
             return 0
@@ -158,10 +161,11 @@ class MultiLevelMetrics:
         s1, t1 = [self.view_layout[x] for x in self.graph.ends(e1)]
         s2, t2 = [self.view_layout[x] for x in self.graph.ends(e2)]
         is_intersect = check_line_segments_intersect(s1, t1, s2, t2)
-        if is_intersect:
+        if is_intersect and dist2(s1, t1) > EPSILON and dist2(s2, t2) > EPSILON:
             a = get_angle_between_line_segments(s1, t1, s2, t2)
             p = self.angle_penalty_func(a)
-            print 'Edge {} intersects with edge {}: angle {} (deg) penalty {}'.format(e1, e2, a * 180 / math.pi, p)
+            if self.debug:
+                print 'Edge {} intersects with edge {}: angle {} (deg) penalty {}'.format(e1, e2, a * 180 / math.pi, p)
             return is_intersect, p
         else:
             return False, 0
@@ -221,10 +225,13 @@ class MultiLevelMetrics:
         count = 0
         for e1 in self.graph.getEdges():
             for e2 in self.graph.getEdges():
-                if e1.id < e2.id and self.graph.source(e1) not in self.graph.ends(e2) and self.graph.target(e1) not in self.graph.ends(e2):
-                    is_intersect, p = self.get_edge_edge_penalty(e1, e2)
-                    count += is_intersect
-                    penalty += p
+                if e1.id < e2.id:
+                    ends1 = self.graph.ends(e1)
+                    ends2 = self.graph.ends(e2)
+                    if ends1[0] not in ends2 and ends1[1] not in ends2 and ends1[0] != ends1[1] and ends2[0] != ends2[1]:
+                        is_intersect, p = self.get_edge_edge_penalty(e1, e2)
+                        count += is_intersect
+                        penalty += p
         return penalty, count
 
 
@@ -238,7 +245,7 @@ if __name__ == '__main__':
     # n2 = graph.nodes()[1]
 
     metrics = MultiLevelMetrics(graph, penalty_func_type='log', angle_penalty_func_type='quadratic',
-                                hierarchical_weight_func_type='exponential')
+                                hierarchical_weight_func_type='exponential', debug=False)
 
     res = metrics.get_graph_node_node_penalty()
     print 'Node-node overlap: penalty: {}  count: {}'.format(res[0], res[1])

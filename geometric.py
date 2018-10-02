@@ -21,21 +21,58 @@ def dot_product(a, b):
 
 
 # Calculate the shortest distance from point p to a line segment ab, all points are in tlp.Vec3f 
-def dist_from_point_to_segment(p, a, b):
-    l2 = dist2(a, b)
-    if l2 < EPSILON:
-        # line segment ab degenerates to a single point
-        return math.sqrt(dist2(p, a))
-    t = max(0, min(1, dot_product(p - a, b - a) / l2))
-    projected_point = a + t * (b - a);
-    return math.sqrt(dist2(p, projected_point))
+# def dist_from_point_to_segment(p, a, b):
+#     l2 = dist2(a, b)
+#     if l2 < EPSILON:
+#         # line segment ab degenerates to a single point
+#         return dist(p, a)
+#     t = max(0, min(1, dot_product(p - a, b - a) / l2))
+#     projected_point = a + t * (b - a)
+#     return dist(p, projected_point)
+
+
+# Solve the quadratic function ax^2 + bx + c = 0
+# Return the two x values if solvable, otherwise return None
+def solve_quadratic_function(a, b, c):
+    p = b ** 2 - 4 * a * c
+    if p >= EPSILON:
+        return (-b - math.sqrt(p)) / a / 2, (-b + math.sqrt(p)) / a / 2
+    else:
+        return None, None
 
 
 # The overlap area between a line segment ab and a circle with center c and radius r
 def cross_line_segment_and_circle(a, b, c, r):
-    d = dist_from_point_to_segment(c, a, b)
-    if d - r < EPSILON:
-        return math.sqrt(r ** 2 - d ** 2)
+    # d = dist_from_point_to_segment(c, a, b)
+    # if d - r < EPSILON:
+    #     dist_a2 = dist2(c, a)
+    #     dist_b2 = dist2(c, b)
+    #     r2 = r ** 2
+    #     if dist_a2 - r2 > EPSILON and dist_b2 - r2 > EPSILON:
+    #         # case 1: a, b are both outside of the circle
+    #         return 2 * math.sqrt(r2 - d ** 2)
+    #     elif dist_a2 - r2 < EPSILON and dist_b2 - r2 < EPSILON:
+    #         # case 2: a, b are both inside the circle
+    #         return dist(a, b)
+    #     else:
+    #         # case 3: one of a, b is inside circle and the other outside
+    #         pass
+    # else:
+    #     return 0
+
+    k1 = a.x() - b.x()
+    k2 = a.y() - b.y()
+    b1 = b.x() - c.x()
+    b2 = b.y() - c.y()
+    # t0 <= t <= t1
+    t0, t1 = solve_quadratic_function(k1 ** 2 + k2 ** 2, 2 * (k1 * b1 + k2 * b2), b1 ** 2 + b2 ** 2 - r ** 2)
+    if t0 is None:
+        return 0
+    # t must be within [0, 1]
+    t0 = max(0, t0)
+    t1 = min(1, t1)
+    if t1 - t0 >= EPSILON:
+        return (t1 - t0) * dist(a, b)
     else:
         return 0
 
@@ -56,10 +93,10 @@ def get_circle_overlap(c1, r1, c2, r2):
     d_sqr = dist2(c1, c2)
     d = math.sqrt(d_sqr)
     
-    if d < abs(r1 - r2):
+    if d - abs(r1 - r2) < EPSILON:
         # one node contains the other
         return math.pi * min(r1, r2) ** 2
-    elif d < r1 + r2:
+    elif d - (r1 + r2) < EPSILON:
         # two nodes intersect
         d1 = (d * d - r2 * r2 + r1 * r1) / d / 2
         d2 = d - d1
@@ -72,11 +109,13 @@ def get_circle_overlap(c1, r1, c2, r2):
 def get_angle_between_line_segments(a, b, c, d):
     vec1 = b - a
     vec2 = d - c
-    cosVal = dot_product(vec1, vec2) / (dist(a, b) * dist(c, d))
-    return math.acos(abs(cosVal))
+    cos_val = abs(dot_product(vec1, vec2) / (dist(a, b) * dist(c, d)))
+    # Clamp cos_val to [0,1] (this happens b/c floating operation error)
+    cos_val = min(1, max(0, cos_val))
+    return math.acos(cos_val)
 
 
-# Given three colinear points p, q, r, the function checks if 
+# Given three collinear points p, q, r, the function checks if
 # point q lies on line segment qr
 def is_on_segment(p, q, r):
     return min(p.x(), r.x()) <= q.x() <= max(p.x(), r.x()) and min(p.y(), r.y()) <= q.y() <= max(p.y(), r.y())
