@@ -81,8 +81,13 @@ def cross_line_segment_and_circle(a, b, c, r):
 # Circle radius r, triangle height d
 # Equation (10) of http://mathworld.wolfram.com/Circle-CircleIntersection.html
 def get_half_len_area(r, d):
-    pie = r * r * math.acos(d / r)
-    triangle = d * math.sqrt(r * r - d * d)
+    # Clamp cos_val to [0,1]
+    cos_val = min(1, max(0, d / r))
+    pie = r * r * math.acos(cos_val)
+    sqrt_val = r * r - d * d
+    if sqrt_val < EPSILON:
+        sqrt_val = 0
+    triangle = d * math.sqrt(sqrt_val)
     return pie - triangle
 
 

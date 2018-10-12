@@ -108,6 +108,7 @@ class MultiLevelMetrics:
         else:
             self.weight_func = get_exponential_decay_func(EXPONENTIAL_DECAY_RATE, self.height)
 
+    # This is the same level counting method in the Bourqui multi-level force layout paper.
     def get_hierarchy_height(self):
         def dfs(g, cur_height):
             self.subgraph_levels[g.getId()] = cur_height
@@ -115,6 +116,14 @@ class MultiLevelMetrics:
             for s in g.getSubGraphs():
                 dfs(s, cur_height + 1)
         dfs(self.graph, 0)
+
+    # For detailed penalty and count information
+    # Each cell(i,j) corresponds to the penalty / count of items at level i and level j
+    def get_initial_count_table(self):
+        # There should be height + 1 rows and columns
+        n = self.height + 1
+        return [[0 for j in range(n)] for i in range(n)],\
+               [[0 for j in range(n)] for i in range(n)]
 
     # Get the center and radius of a node or subgraph v
     def get_bounding_circle(self, v):
@@ -174,31 +183,48 @@ class MultiLevelMetrics:
     def get_graph_node_node_penalty(self):
         penalty = 0
         count = 0
-                
+        penalty_lvl, count_lvl = self.get_initial_count_table()
+
         for n1 in self.graph.getNodes():
             # leaf node x leaf node
             for n2 in self.graph.getNodes():
-                if n1.id < n2.id:        # Make sure no dupilcate pairs of nodes are considered
+                if n1.id < n2.id:        # Make sure no duplicate pairs of nodes are considered
                     p = self.get_node_node_penalty(n1, n2)
-                    count += p > 0
-                    penalty += self.weight_func(self.height - 1) * p
-        
+                    if p > 0:
+                        count += 1
+                        penalty += self.weight_func(self.height - 1) * p
+                        count_lvl[-1][-1] += 1
+                        penalty_lvl[-1][-1] += p
+
             # leaf node x subgraph
             for subGraph in self.graph.getDescendantGraphs():
                 if not subGraph.isElement(n1):
                     p = self.get_node_node_penalty(n1, subGraph)
-                    count += p > 0
-                    penalty += self.weight_func(self.subgraph_levels[subGraph.getId()]) * p
-                        
+                    if p > 0:
+                        count += 1
+                        lvl = self.subgraph_levels[subGraph.getId()]
+                        penalty += self.weight_func(lvl) * p
+                        count_lvl[lvl][-1] += 1
+                        penalty_lvl[lvl][-1] += p
+
         for sub1 in self.graph.getDescendantGraphs():
             for sub2 in self.graph.getDescendantGraphs():
-                if sub1.getId() < sub2.getId() and not sub2.isDescendantGraph(sub1):   # todo why not the other way?
+                if sub1.getId() < sub2.getId() and not sub2.isDescendantGraph(sub1) and not sub1.isDescendantGraph(sub2):
                     p = self.get_node_node_penalty(sub1, sub2)
-                    count += p > 0
-                    # Assuming weight function takes the higher one in the hierarchy
-                    penalty += self.weight_func(min(self.subgraph_levels[sub1.getId()], self.subgraph_levels[sub2.getId()])) * p
-                    
-        return penalty, count
+                    if p > 0:
+                        count += p > 0
+                        # Assuming weight function takes the higher one in the hierarchy
+                        lvl1 = self.subgraph_levels[sub1.getId()]
+                        lvl2 = self.subgraph_levels[sub2.getId()]
+                        min_lvl = min(lvl1, lvl2)
+                        max_lvl = max(lvl1, lvl2)
+                        penalty += self.weight_func(min_lvl) * p
+                        # Fill the upper-right triangle of the counting table
+                        count_lvl[min_lvl][max_lvl] += 1
+                        penalty_lvl[min_lvl][max_lvl] += p
+
+        return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
+                'total_count': count, 'count_by_level': count_lvl}
 
     def get_graph_node_edge_penalty(self):
         penalty = 0
@@ -235,27 +261,70 @@ class MultiLevelMetrics:
         return penalty, count
 
 
+# Print out the penalty and count by level
+def print_by_level(p, c):
+    n = len(p[0])
+    header_format = '\t{:5}' + '{:10}' * (n - 1)
+    row_format = '\t{:5}' + '{:10.2f}' * (n - 1)
+    print '\tPenalty by level (max level corresponds to leaf nodes, level 0 to the whole graph):'
+    print header_format.format('level', *range(1, n))
+    for i in range(1, n):
+        print row_format.format(i, *p[i][1:])
+    print
+
+    print '\tCount by level:'
+    row_format = '\t{:5}' + '{:10}' * (n - 1)
+    print header_format.format('level', *range(1, n))
+    for i in range(1, n):
+        print row_format.format(i, *c[i][1:])
+    print
+
+
+# Handy function to get a pretty print out of results
+def run_and_print(filename, **metrics_args):
+    graph = tlp.loadGraph(filename)
+    metrics = MultiLevelMetrics(graph, **metrics_args)
+    print '===== ', filename, ' ====='
+    print '#nodes: {}  #edges: {}  height of node hiearachy: {}'.format(graph.numberOfNodes(), graph.numberOfEdges(), metrics.height)
+    print
+
+    nn = metrics.get_graph_node_node_penalty()
+    print 'Node-node penalty: {:10.2f}   count: {:7}'.format(nn['total_penalty'], nn['total_count'])
+    print_by_level(nn['penalty_by_level'], nn['count_by_level'])
+
+    ne = metrics.get_graph_node_edge_penalty()
+    print 'Node-edge penalty: {:10.2f}   count: {:7}'.format(ne[0], ne[1])
+
+    ee = metrics.get_graph_edge_edge_penalty()
+    print 'Edge-edge penalty: {:10.2f}   count: {:7}'.format(ee[0], ee[1])
+    print '===== END ====='
+    print
+
+
 if __name__ == '__main__':
     # Load the test graph
     # graph = tlp.loadGraph('test1.tlp')
-    graph = tlp.loadGraph('../data/test1.tlp')
-    print [x for x in graph.getNodes()]
-    print [x for x in graph.getDescendantGraphs()]
-    # n1 = graph.nodes()[0]
-    # n2 = graph.nodes()[1]
+    # graph = tlp.loadGraph('../data/test1.tlp')
+    # print [x for x in graph.getNodes()]
+    # print [x for x in graph.getDescendantGraphs()]
+    # # n1 = graph.nodes()[0]
+    # # n2 = graph.nodes()[1]
+    #
+    # metrics = MultiLevelMetrics(graph, penalty_func_type='log', angle_penalty_func_type='quadratic',
+    #                             hierarchical_weight_func_type='exponential', debug=False)
+    #
+    # res = metrics.get_graph_node_node_penalty()
+    # print 'Node-node overlap: penalty: {}  count: {}'.format(res['total_penalty'], res['total_count'])
+    # print res['penalty_by_level']
+    # print res['count_by_level']
+    # print
+    #
+    # res = metrics.get_graph_node_edge_penalty()
+    # print 'Node-edge overlap: penalty: {}  count: {}'.format(res[0], res[1])
+    # print
+    #
+    # res = metrics.get_graph_edge_edge_penalty()
+    # print 'Edge-edge overlap: penalty: {}  count: {}'.format(res[0], res[1])
+    # print
 
-    metrics = MultiLevelMetrics(graph, penalty_func_type='log', angle_penalty_func_type='quadratic',
-                                hierarchical_weight_func_type='exponential', debug=False)
-
-    res = metrics.get_graph_node_node_penalty()
-    print 'Node-node overlap: penalty: {}  count: {}'.format(res[0], res[1])
-    print
-
-    res = metrics.get_graph_node_edge_penalty()
-    print 'Node-edge overlap: penalty: {}  count: {}'.format(res[0], res[1])
-    print
-
-    res = metrics.get_graph_edge_edge_penalty()
-    print 'Edge-edge overlap: penalty: {}  count: {}'.format(res[0], res[1])
-    print
-
+    run_and_print('../data/test1.tlp')
