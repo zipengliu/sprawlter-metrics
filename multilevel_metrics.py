@@ -1,6 +1,8 @@
 from __future__ import division
 from tulip import tlp
+from shapely.geometry import *
 from geometric import *
+from pprint import pprint
 import math
 
 ALPHA = 0.2
@@ -78,10 +80,28 @@ class MultiLevelMetrics:
 
     def __init__(self, graph, penalty_func_type = 'piecewise-linear', angle_penalty_func_type = 'linear',
                  hierarchical_weight_func_type = 'uniform', debug=False):
-        self.graph = graph
         self.debug = debug
-        self.view_layout = graph.getLayoutProperty('viewLayout')
-        self.view_size = graph.getSizeProperty('viewSize')
+
+        # Retrieve nodes and edges from graph and construct Shapely geometries
+        view_layout = graph.getLayoutProperty('viewLayout')
+        view_size = graph.getSizeProperty('viewSize')
+        self.leaf_nodes = [{'id': n.id,
+                            'geometry': Point(view_layout[n].x(), view_layout[n].y()).buffer(view_size[n][0] / 2.0, cap_style=CAP_STYLE.round),
+                            'diameter': view_size[n][0]}
+                           for n in graph.nodes()]
+        self.edges = []
+        for e in graph.getEdges():
+            src, tgt = graph.ends(e)
+            self.edges.append({'id': e.id,
+                               'ends': (src.id, tgt.id),
+                               'geometry': LineString([(view_layout[src].x(), view_layout[src].y()),
+                                                       (view_layout[tgt].x(), view_layout[tgt].y())])})
+
+        self.height = 0
+        self.metanodes = {}
+        self.metaedges = []
+        self.root = graph.getId()
+        self.retrieve_hierarchy(graph)
 
         if penalty_func_type == 'piecewise-linear':
             self.penalty_func = piecewise_linear_func
@@ -98,9 +118,6 @@ class MultiLevelMetrics:
             self.angle_penalty_func = angle_log_func
 
         # Get the height of the node hierarchy
-        self.height = 0
-        self.subgraph_levels = {}
-        self.get_hierarchy_height()
         if hierarchical_weight_func_type == 'uniform':
             self.weight_func = get_uniform_weight_func(self.height)
         elif hierarchical_weight_func_type == 'linear':
@@ -108,74 +125,102 @@ class MultiLevelMetrics:
         else:
             self.weight_func = get_exponential_decay_func(EXPONENTIAL_DECAY_RATE, self.height)
 
+    # Construct a simple node (graph) hierarchy data structure from the tulip graph and count levels
     # This is the same level counting method in the Bourqui multi-level force layout paper.
-    def get_hierarchy_height(self):
+    def retrieve_hierarchy(self, graph):
         def dfs(g, cur_height):
-            self.subgraph_levels[g.getId()] = cur_height
+            node = {'id': g.getId(),
+                    'geometry': None,
+                    'diameter': 0,
+                    'desc_subgraphs': {},
+                    'leaf_nodes': {},
+                    'level': cur_height}
+
+            # For finding whether a node is in a subgraph
+            for leaf in g.getNodes():
+                node['leaf_nodes'][leaf.id] = True
+            # For finding whether two meta-nodes are on the same path of the node hierarchy
+            for s in g.getDescendantGraphs():
+                node['desc_subgraphs'][s.getId()] = True
+
             self.height = max(self.height, cur_height + 1)
             for s in g.getSubGraphs():
                 dfs(s, cur_height + 1)
-        dfs(self.graph, 0)
+
+            # Compute convex hull of this sub-graph in post-order
+            if g.numberOfSubGraphs() == 0:
+                # compute a convex hull of its leaf nodes
+                coords = tlp.computeConvexHull(g)
+                node['geometry'] = Polygon([(c.x(), c.y()) for c in coords])
+            else:
+                # union the convex hull of its sub-graphs
+                node['geometry'] = MultiPolygon([self.metanodes[s.getId()]['geometry'] for s in g.getSubGraphs()]).convex_hull
+
+            # Note that we don't compute the real diameter for a polygon, but instead, only use the diagonal of
+            # the axis aligned bounding box to approximate the diameter, which is cheap to compute
+            bbox = node['geometry'].bounds
+            node['diameter'] = Point(bbox[0], bbox[1]).distance(Point(bbox[2], bbox[3]))
+
+            self.metanodes[g.getId()] = node
+
+        # Get the metanodes
+        dfs(graph, 0)
+        # pprint(self.metanodes)
+
+        # TODO Get the metaedges
 
     # For detailed penalty and count information
     # Each cell(i,j) corresponds to the penalty / count of items at level i and level j
     def get_initial_count_table(self):
         # There should be height + 1 rows and columns
         n = self.height + 1
-        return [[0 for j in range(n)] for i in range(n)],\
-               [[0 for j in range(n)] for i in range(n)]
-
-    # Get the center and radius of a node or subgraph v
-    def get_bounding_circle(self, v):
-        if isinstance(v, tlp.node):
-            return self.view_layout[v], self.view_size[v][0] / 2
-        else:
-            bc = tlp.computeBoundingRadius(v)
-            return bc[0], bc[0].dist(bc[1])
+        return [[0] * n for _ in range(n)],\
+               [[0] * n for _ in range(n)]
 
     # Get the penalty for overlap between a node (or a subgraph / meta-node) v and an edge e
+    # TODO deal with metaedge
     def get_node_edge_penalty(self, e, v):
-        s = self.view_layout[self.graph.source(e)]
-        t = self.view_layout[self.graph.target(e)]
-        center, radius = self.get_bounding_circle(v)
-        o = cross_line_segment_and_circle(s, t, center, radius)
-        if o > 0:
-            max_overlap = min(dist(s, t), radius * 2)
-            p = self.penalty_func(o, max_overlap)
+        geom_v = v['geometry']
+        geom_e = e['geometry']
+        if geom_v.intersects(geom_e):
+            isect = geom_v.intersection(geom_e)
+            max_overlap = min(geom_e.length, v['diameter'])
+            p = self.penalty_func(isect.length, max_overlap)
             if self.debug:
-                print '(meta-)node {} overlaps with edge {} (overlap area: {}, penalty: {})'.format(v, e, o, p)
+                print '(meta-)node {} overlaps with edge {} (overlap area: {}, penalty: {})'.format(v, e, isect.length, p)
             return p
         else:
             return 0
 
-    # Get the penalty for overlap between two nodes or graphs v1 and v2, given that nodes are represented as circles
+    # Get the penalty for overlap between two (meta-)nodes v1 and v2, given that nodes are represented as circles
     def get_node_node_penalty(self, v1, v2):
-        c1, r1 = self.get_bounding_circle(v1)
-        c2, r2 = self.get_bounding_circle(v2)
-        # print 'getNNPenalty: ', v1, c1, r1, v2, c2, r2
-        o = get_circle_overlap(c1, r1, c2, r2)
-        if o > 0:
-            size1 = math.pi * r1 ** 2
-            size2 = math.pi * r2 ** 2
-            p = self.penalty_func(o, min(size1, size2))
+        geom1 = v1['geometry']
+        geom2 = v2['geometry']
+        if geom1.intersects(geom2):
+            isect = geom1.intersection(geom2)
+            p = self.penalty_func(isect.area, min(geom1.area, geom2.area))
             if self.debug:
-                print '(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'.format(v1, v2, o, p)
+                print '(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'.format(v1, v2, isect.area, p)
             return p
         else:
             return 0
 
     # Get the penalty for edge intersection
     def get_edge_edge_penalty(self, e1, e2):
-        # print e1, self.graph.ends(e1), e2, self.graph.ends(e2)
-        s1, t1 = [self.view_layout[x] for x in self.graph.ends(e1)]
-        s2, t2 = [self.view_layout[x] for x in self.graph.ends(e2)]
-        is_intersect = check_line_segments_intersect(s1, t1, s2, t2)
-        if is_intersect and dist2(s1, t1) > EPSILON and dist2(s2, t2) > EPSILON:
-            a = get_angle_between_line_segments(s1, t1, s2, t2)
-            p = self.angle_penalty_func(a)
+        geom1 = e1['geometry']
+        geom2 = e2['geometry']
+        if geom1.intersects(geom2):
+            angle = None
+            if geom1.length < EPSILON or geom2.length < EPSILON:
+                # If the line is too short, we won't be able to compute the angle
+                angle = 0
+            else:
+                angle = get_angle_between_line_segments(geom1, geom2)
+
+            p = self.angle_penalty_func(angle)
             if self.debug:
-                print 'Edge {} intersects with edge {}: angle {} (deg) penalty {}'.format(e1, e2, a * 180 / math.pi, p)
-            return is_intersect, p
+                print 'Edge {} intersects with edge {}: angle {} (deg) penalty {}'.format(e1, e2, angle * 180 / math.pi, p)
+            return True, p
         else:
             return False, 0
 
@@ -185,43 +230,46 @@ class MultiLevelMetrics:
         count = 0
         penalty_lvl, count_lvl = self.get_initial_count_table()
 
-        for n1 in self.graph.getNodes():
+        for i, n1 in enumerate(self.leaf_nodes):
             # leaf node x leaf node
-            for n2 in self.graph.getNodes():
-                if n1.id < n2.id:        # Make sure no duplicate pairs of nodes are considered
-                    p = self.get_node_node_penalty(n1, n2)
-                    if p > 0:
-                        count += 1
-                        penalty += self.weight_func(self.height - 1) * p
-                        count_lvl[-1][-1] += 1
-                        penalty_lvl[-1][-1] += p
+            for j in xrange(i + 1, len(self.leaf_nodes)):       # Make sure no duplicate pairs of nodes are considered
+                n2 = self.leaf_nodes[j]
+                p = self.get_node_node_penalty(n1, n2)
+                if p > 0:
+                    count += 1
+                    penalty += self.weight_func(self.height - 1) * p
+                    count_lvl[-1][-1] += 1
+                    penalty_lvl[-1][-1] += p
 
             # leaf node x subgraph
-            for subGraph in self.graph.getDescendantGraphs():
-                if not subGraph.isElement(n1):
-                    p = self.get_node_node_penalty(n1, subGraph)
-                    if p > 0:
-                        count += 1
-                        lvl = self.subgraph_levels[subGraph.getId()]
-                        penalty += self.weight_func(lvl) * p
-                        count_lvl[lvl][-1] += 1
-                        penalty_lvl[lvl][-1] += p
+            for metanode_id in self.metanodes:
+                if metanode_id != self.root:
+                    mn = self.metanodes[metanode_id]
+                    if n1['id'] not in mn['leaf_nodes']:
+                        p = self.get_node_node_penalty(n1, mn)
+                        if p > 0:
+                            count += 1
+                            lvl = mn['level']
+                            penalty += self.weight_func(lvl) * p
+                            count_lvl[lvl][-1] += 1
+                            penalty_lvl[lvl][-1] += p
 
-        for sub1 in self.graph.getDescendantGraphs():
-            for sub2 in self.graph.getDescendantGraphs():
-                if sub1.getId() < sub2.getId() and not sub2.isDescendantGraph(sub1) and not sub1.isDescendantGraph(sub2):
-                    p = self.get_node_node_penalty(sub1, sub2)
-                    if p > 0:
-                        count += p > 0
-                        # Assuming weight function takes the higher one in the hierarchy
-                        lvl1 = self.subgraph_levels[sub1.getId()]
-                        lvl2 = self.subgraph_levels[sub2.getId()]
-                        min_lvl = min(lvl1, lvl2)
-                        max_lvl = max(lvl1, lvl2)
-                        penalty += self.weight_func(min_lvl) * p
-                        # Fill the upper-right triangle of the counting table
-                        count_lvl[min_lvl][max_lvl] += 1
-                        penalty_lvl[min_lvl][max_lvl] += p
+        for id1, mn1 in self.metanodes.iteritems():
+            if id1 != self.root:
+                for id2, mn2 in self.metanodes.iteritems():
+                    if id2 != self.root and id1 < id2 and id2 not in mn1['desc_subgraphs'] and id1 not in mn2['desc_subgraphs']:
+                        p = self.get_node_node_penalty(mn1, mn2)
+                        if p > 0:
+                            count += p > 0
+                            # Assuming weight function takes the higher one in the hierarchy
+                            lvl1 = mn1['level']
+                            lvl2 = mn2['level']
+                            min_lvl = min(lvl1, lvl2)
+                            max_lvl = max(lvl1, lvl2)
+                            penalty += self.weight_func(min_lvl) * p
+                            # Fill the upper-right triangle of the counting table
+                            count_lvl[min_lvl][max_lvl] += 1
+                            penalty_lvl[min_lvl][max_lvl] += p
 
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl}
@@ -229,35 +277,35 @@ class MultiLevelMetrics:
     def get_graph_node_edge_penalty(self):
         penalty = 0
         count = 0
-        for e in self.graph.getEdges():
-            s, t = self.graph.ends(e)
-                    
-            for node in self.graph.getNodes():
-                if node != s and node != t:
-                    p = self.get_node_edge_penalty(e, node)
-                    count += p > 0
-                    penalty += self.weight_func(self.height - 1) * p
-                    
-            for subGraph in self.graph.getDescendantGraphs():
-                if not subGraph.isElement(s) and not subGraph.isElement(t):
-                    p = self.get_node_edge_penalty(e, subGraph)
-                    count += p > 0
-                    penalty += self.weight_func(self.subgraph_levels[subGraph.getId()]) * p
+        for e in self.edges:
+            s, t = e['ends']
+            if s != t:
+                for node in self.leaf_nodes:
+                    if node['id'] != s and node['id'] != t:
+                        p = self.get_node_edge_penalty(e, node)
+                        count += p > 0
+                        penalty += self.weight_func(self.height - 1) * p
+
+                for metanode_id, mn in self.metanodes.iteritems():
+                    if metanode_id != self.root and s not in mn['leaf_nodes'] and t not in mn['leaf_nodes']:
+                        p = self.get_node_edge_penalty(e, mn)
+                        count += p > 0
+                        penalty += self.weight_func(mn['level']) * p
 
         return penalty, count
 
     def get_graph_edge_edge_penalty(self):
         penalty = 0
         count = 0
-        for e1 in self.graph.getEdges():
-            for e2 in self.graph.getEdges():
-                if e1.id < e2.id:
-                    ends1 = self.graph.ends(e1)
-                    ends2 = self.graph.ends(e2)
-                    if ends1[0] not in ends2 and ends1[1] not in ends2 and ends1[0] != ends1[1] and ends2[0] != ends2[1]:
-                        is_intersect, p = self.get_edge_edge_penalty(e1, e2)
-                        count += is_intersect
-                        penalty += p
+        for i, e1 in enumerate(self.edges):
+            s, t = e1['ends']
+            for j in xrange(i + 1, len(self.edges)):
+                e2 = self.edges[j]
+                # Make sure e1 and e2 do not connect the same node and they are not self connecting edges
+                if s not in e2['ends'] and t not in e2['ends'] and s != t and e2['ends'][0] != e2['ends'][1]:
+                    is_intersect, p = self.get_edge_edge_penalty(e1, e2)
+                    count += is_intersect
+                    penalty += p
         return penalty, count
 
 
@@ -327,4 +375,4 @@ if __name__ == '__main__':
     # print 'Edge-edge overlap: penalty: {}  count: {}'.format(res[0], res[1])
     # print
 
-    run_and_print('../data/test1.tlp')
+    run_and_print('../data/test1.tlp', debug=True)
