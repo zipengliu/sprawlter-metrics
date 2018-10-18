@@ -1,7 +1,8 @@
 from __future__ import division
 import math
+from shapely.geometry import *
 
-EPSILON  = 1e-6
+EPSILON = 1e-6
 
 # Geometric functions not provided by Shapely
 
@@ -18,3 +19,15 @@ def get_angle_between_line_segments(l1, l2):
     return math.acos(cos_val)
 
 
+# Get the "main" axis line of a geometry
+def get_main_axis(geom):
+    if geom.geom_type == 'LineString':
+        return geom
+    # Polygon
+    rect = geom.minimum_rotated_rectangle
+    coords = rect.exterior.coords
+    # Compare the two sides of the minimum bounding rectangle
+    if Point(coords[0]).distance(Point(coords[1])) > Point(coords[1]).distance(Point(coords[2])):
+        return LineString([coords[0], coords[1]])
+    else:
+        return LineString([coords[1], coords[2]])
