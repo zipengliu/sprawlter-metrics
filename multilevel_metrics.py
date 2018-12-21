@@ -4,6 +4,7 @@ from shapely.geometry import *
 from geometric import *
 from pprint import pprint
 import math
+import json, os
 
 ALPHA = 0.2
 GLANCING_ANGLE_PENALTY = 5
@@ -469,6 +470,49 @@ def run_and_print(filename, **metrics_args):
     ee = metrics.get_graph_edge_edge_penalty()
     print 'Edge-edge penalty: {:10.2f}   count: {:7}'.format(ee['total_penalty'], ee['total_count'])
     print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
+
+    print '===== END ====='
+    print
+
+
+def run_store_print(file_dir, filename, **metrics_args):
+    data_path = os.path.join(file_dir, filename + '.tlp')
+    # image_path = os.path.join(file_dir, filename + '.png')
+    json_path = os.path.join(file_dir, filename + '_result.json')
+
+    graph = tlp.loadGraph(data_path)
+    metrics = MultiLevelMetrics(graph, **metrics_args)
+    print '===== ', filename, ' ====='
+    print '#nodes: {}  #edges: {}  height of node hiearachy: {}'.format(graph.numberOfNodes(), graph.numberOfEdges(), metrics.height)
+    print
+
+    json_data = {
+        'tlpFile': filename + '.tlp',
+        'imageFile': filename + '.png',         # require the image to be at the same directory and with the same filename
+        'graph': {
+            'numberOfNodes': graph.numberOfNodes(),
+            'numberOfEdges': graph.numberOfEdges(),
+            'numberOfLevels': metrics.height,
+        },
+        'metrics': {}
+    }
+
+    nn = metrics.get_graph_node_node_penalty()
+    json_data['metrics']['nn'] = nn
+    print 'Node-node penalty: {:10.2f}   count: {:7}'.format(nn['total_penalty'], nn['total_count'])
+    print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
+
+    ne = metrics.get_graph_node_edge_penalty()
+    json_data['metrics']['ne'] = ne
+    print 'Node-edge penalty: {:10.2f}   count: {:7}'.format(ne['total_penalty'], ne['total_count'])
+    print_by_level(ne['penalty_by_level'], ne['count_by_level'], False)
+
+    ee = metrics.get_graph_edge_edge_penalty()
+    json_data['metrics']['ee'] = ee
+    print 'Edge-edge penalty: {:10.2f}   count: {:7}'.format(ee['total_penalty'], ee['total_count'])
+    print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
+
+    json.dump(json_data, open(json_path, 'w'))
 
     print '===== END ====='
     print
