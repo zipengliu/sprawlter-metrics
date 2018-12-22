@@ -487,8 +487,7 @@ def run_store_print(file_dir, filename, **metrics_args):
     print
 
     json_data = {
-        'tlpFile': filename + '.tlp',
-        'imageFile': filename + '.png',         # require the image to be at the same directory and with the same filename
+        'tlpFile': filename + '.tlp',           # only the filename not the full path
         'graph': {
             'numberOfNodes': graph.numberOfNodes(),
             'numberOfEdges': graph.numberOfEdges(),
