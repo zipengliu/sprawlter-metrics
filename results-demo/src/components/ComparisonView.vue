@@ -24,6 +24,7 @@
                 {key: 'neCount', label: 'Node-edge Count'},
                 {key: 'eePenalty', label: 'Edge-edge Penalty', formatter: 'fixedPrecision'},
                 {key: 'eeCount', label: 'Edge-edge Count'},
+                {key: 'executionTime', label: 'Execution Time (s)', formatter: 'fixedPrecision'},
                 ]
         }),
         computed: {
@@ -39,6 +40,7 @@
                     neCount: r.metrics.ne.total_count,
                     eePenalty: r.metrics.ee.total_penalty,
                     eeCount: r.metrics.ee.total_count,
+                    executionTime: r.metrics.nn.executionTime + r.metrics.ne.executionTime + r.metrics.ee.executionTime,
                 }));
             }
         },

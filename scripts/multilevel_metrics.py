@@ -1,10 +1,12 @@
 from __future__ import division
 from tulip import tlp
-from shapely.geometry import *
 from geometric import *
 from pprint import pprint
 import math
-import json, os
+import json
+import os
+from timeit import default_timer as timer
+
 
 ALPHA = 0.2
 GLANCING_ANGLE_PENALTY = 5
@@ -496,19 +498,28 @@ def run_store_print(file_dir, filename, **metrics_args):
         'metrics': {}
     }
 
+    s = timer()
     nn = metrics.get_graph_node_node_penalty()
+    e = timer()
+    nn['executionTime'] = e - s     # in seconds
     json_data['metrics']['nn'] = nn
-    print 'Node-node penalty: {:10.2f}   count: {:7}'.format(nn['total_penalty'], nn['total_count'])
+    print 'Node-node penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(nn['total_penalty'], nn['total_count'], nn['executionTime'])
     print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
 
+    s = timer()
     ne = metrics.get_graph_node_edge_penalty()
+    e = timer()
+    ne['executionTime'] = e - s     # in seconds
     json_data['metrics']['ne'] = ne
-    print 'Node-edge penalty: {:10.2f}   count: {:7}'.format(ne['total_penalty'], ne['total_count'])
+    print 'Node-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(ne['total_penalty'], ne['total_count'], ne['executionTime'])
     print_by_level(ne['penalty_by_level'], ne['count_by_level'], False)
 
+    s = timer()
     ee = metrics.get_graph_edge_edge_penalty()
+    e = timer()
+    ee['executionTime'] = e - s     # in seconds
     json_data['metrics']['ee'] = ee
-    print 'Edge-edge penalty: {:10.2f}   count: {:7}'.format(ee['total_penalty'], ee['total_count'])
+    print 'Edge-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(ee['total_penalty'], ee['total_count'], ee['executionTime'])
     print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
 
     json.dump(json_data, open(json_path, 'w'))
