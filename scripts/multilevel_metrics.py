@@ -221,15 +221,16 @@ class MultiLevelMetrics:
 
     # For detailed penalty and count information
     # Each cell(i,j) corresponds to the penalty / count of items at level i and level j
-    def get_initial_level_table(self, is_symmetric):
+    def get_initial_level_table(self, is_symmetric, is_node_node):
         # There should be height + 1 rows and columns
         n = self.height + 1
         table = [[0] * n for _ in range(n)]
         # We do not check crossing between leaf node and metanode
         # Here is just for printing out this message
-        for i in xrange(n - 1):
-            table[-1][i] = 'NA'
-            table[i][-1] = 'NA'
+        if is_node_node:
+            for i in xrange(n - 1):
+                table[-1][i] = 'NA'
+                table[i][-1] = 'NA'
         # It is supposed to be a symmetric matrix so we only use upper half of it
         if is_symmetric:
             for i in xrange(n):
@@ -306,8 +307,8 @@ class MultiLevelMetrics:
     def get_graph_node_node_penalty(self):
         penalty = 0
         count = 0
-        penalty_lvl = self.get_initial_level_table(True)
-        count_lvl = self.get_initial_level_table(True)
+        penalty_lvl = self.get_initial_level_table(True, True)
+        count_lvl = self.get_initial_level_table(True, True)
 
         for i, n1 in enumerate(self.leaf_nodes):
             # leaf node x leaf node
@@ -357,8 +358,8 @@ class MultiLevelMetrics:
         penalty = 0
         count = 0
         # Row is node level, column is edge level
-        penalty_lvl = self.get_initial_level_table(False)
-        count_lvl = self.get_initial_level_table(False)
+        penalty_lvl = self.get_initial_level_table(False, False)
+        count_lvl = self.get_initial_level_table(False, False)
 
         # between leaf edge and leaf node
         for e in self.edges:
@@ -373,18 +374,21 @@ class MultiLevelMetrics:
                             count_lvl[-1][-1] += 1
                             penalty_lvl[-1][-1] += p
 
-        # between metaedge and metanode
-        for eid, e in self.metaedges.iteritems():
-            s, t = e['ends']
-            if s != t:
+        # # between metaedge and metanode
+        # for eid, e in self.metaedges.iteritems():
+        #     s, t = e['ends']
+        #     if s != t:
                 for metanode_id, mn in self.metanodes.iteritems():
                     if metanode_id != self.root and metanode_id != s and metanode_id != t:
                         is_isect, p = self.get_node_edge_penalty(e, mn)
                         if is_isect:
                             count += 1
-                            penalty += self.weight_func(min(mn['level'], e['level'])) * p
-                            count_lvl[mn['level']][e['level']] += 1
-                            penalty_lvl[mn['level']][e['level']] += p
+                            # penalty += self.weight_func(min(mn['level'], e['level'])) * p
+                            # count_lvl[mn['level']][e['level']] += 1
+                            # penalty_lvl[mn['level']][e['level']] += p
+                            penalty += self.weight_func(mn['level']) * p
+                            count_lvl[mn['level']][-1] += 1
+                            penalty_lvl[mn['level']][-1] += p
 
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl}
@@ -392,8 +396,8 @@ class MultiLevelMetrics:
     def get_graph_edge_edge_penalty(self):
         penalty = 0
         count = 0
-        penalty_lvl = self.get_initial_level_table(True)
-        count_lvl = self.get_initial_level_table(True)
+        penalty_lvl = self.get_initial_level_table(True, False)
+        count_lvl = self.get_initial_level_table(True, False)
 
         # between leaf edges
         for i, e1 in enumerate(self.edges):
@@ -410,19 +414,19 @@ class MultiLevelMetrics:
                         penalty_lvl[-1][-1] += p
         # between metaedges
         # TODO do we exclude the degenerate case? Otherwise the leaf edge would be counted multiple times?
-        for eid1, e1 in self.metaedges.iteritems():
-            s1, t1 = e1['ends']
-            for eid2, e2 in self.metaedges.iteritems():
-                if eid1 < eid2 and s1 not in e2['ends'] and t1 not in e2['ends']:
-                    is_intersect, p = self.get_edge_edge_penalty(e1, e2)
-                    if is_intersect:
-                        count += 1
-                        min_lvl = min(e1['level'], e2['level'])
-                        max_lvl = max(e1['level'], e2['level'])
-                        penalty += self.weight_func(min_lvl) * p
-                        # Fill the upper-right triangle of the counting table
-                        count_lvl[min_lvl][max_lvl] += 1
-                        penalty_lvl[min_lvl][max_lvl] += p
+        # for eid1, e1 in self.metaedges.iteritems():
+        #     s1, t1 = e1['ends']
+        #     for eid2, e2 in self.metaedges.iteritems():
+        #         if eid1 < eid2 and s1 not in e2['ends'] and t1 not in e2['ends']:
+        #             is_intersect, p = self.get_edge_edge_penalty(e1, e2)
+        #             if is_intersect:
+        #                 count += 1
+        #                 min_lvl = min(e1['level'], e2['level'])
+        #                 max_lvl = max(e1['level'], e2['level'])
+        #                 penalty += self.weight_func(min_lvl) * p
+        #                 # Fill the upper-right triangle of the counting table
+        #                 count_lvl[min_lvl][max_lvl] += 1
+        #                 penalty_lvl[min_lvl][max_lvl] += p
 
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl}
@@ -495,6 +499,7 @@ def run_store_print(file_dir, filename, **metrics_args):
             'numberOfEdges': graph.numberOfEdges(),
             'numberOfLevels': metrics.height,
         },
+        'start_time': timer(),
         'metrics': {}
     }
 
@@ -522,6 +527,7 @@ def run_store_print(file_dir, filename, **metrics_args):
     print 'Edge-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(ee['total_penalty'], ee['total_count'], ee['executionTime'])
     print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
 
+    json_data['end_time'] = timer()
     json.dump(json_data, open(json_path, 'w'))
 
     print '===== END ====='

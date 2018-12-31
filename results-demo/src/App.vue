@@ -1,7 +1,10 @@
 <template>
-  <div id="app">
-    <ComparisonView :results="results" :dataPath="dataPath" />
-  </div>
+    <div id="app">
+        <div class="timestamp" v-if="timestamp">
+            {{ timestamp.toString() }}
+        </div>
+        <ComparisonView :results="results" :dataPath="dataPath" />
+    </div>
 </template>
 
 <script>
@@ -13,7 +16,7 @@
         components: {
             ComparisonView
         },
-        data: () => ({results: [], dataPath: null}),
+        data: () => ({results: [], dataPath: null, timestamp: null}),
         mounted() {
             let dataPath = `/data${window.location.pathname}`;
             axios.get(`${dataPath}/graphs.txt`).then(response => {
@@ -23,6 +26,7 @@
                     .then(responses => {
                         this.results = responses.map(r => r.data);
                         this.dataPath = dataPath;
+                        this.timestamp = new Date(this.results[this.results.length - 1].end_time * 1000);
                         this.graphNames = graphNames;
                     })
             })
@@ -40,4 +44,7 @@
     color: #2c3e50;
     margin-top: 60px;
   }
+    .timestamp {
+        text-align: left;
+    }
 </style>
