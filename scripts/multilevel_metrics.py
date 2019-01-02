@@ -1,11 +1,13 @@
-from __future__ import division
-from tulip import tlp
+# This file runs on Python 3
+# Require packages: shapely, isect_segment (by ideasman42)
+
 from geometric import *
-from pprint import pprint
+from shapely.geometry import *
 import math
 import json
 import os
-from timeit import default_timer as timer
+from time import process_time as timer
+from poly_point_isect import isect_segments_include_segments
 
 
 ALPHA = 0.2
@@ -79,34 +81,38 @@ def get_linear_decay_func(k, h):
     return lambda i: k * i + b
 
 
+# a decorator for performance timing
+def timeit(func):
+    def timed(*args, **kw):
+        ts = timer()
+        result = func(*args, **kw)
+        te = timer()
+
+        result['execution_time'] = te - ts
+        return result
+    return timed
+
+
 class MultiLevelMetrics:
 
-    def __init__(self, graph, penalty_func_type = 'piecewise-linear', angle_penalty_func_type = 'linear',
+    def __init__(self, json_path, penalty_func_type = 'piecewise-linear', angle_penalty_func_type = 'linear',
                  hierarchical_weight_func_type = 'uniform', debug=False):
         self.debug = debug
 
-        # Retrieve nodes and edges from graph and construct Shapely geometries
-        view_layout = graph.getLayoutProperty('viewLayout')
-        view_size = graph.getSizeProperty('viewSize')
-        # THe node id should equal to the index in this array  TODO: verify whether this is true
-        self.leaf_nodes = [{'id': n.id, 'parent_metanode': None,        # fulfill later
-                            'geometry': Point(view_layout[n].x(), view_layout[n].y()).buffer(view_size[n][0] / 2.0, cap_style=CAP_STYLE.round),
-                            'diameter': view_size[n][0]}
-                           for n in graph.nodes()]
-        # THe edge id should equal to the index in this array  TODO: verify whether this is true
-        self.edges = []
-        for e in graph.getEdges():
-            src, tgt = graph.ends(e)
-            self.edges.append({'id': e.id,
-                               'ends': (src.id, tgt.id),
-                               'geometry': LineString([(view_layout[src].x(), view_layout[src].y()),
-                                                       (view_layout[tgt].x(), view_layout[tgt].y())])})
+        # Import the coordinates of graph elements
+        json_data = json.load(open(json_path))
+        # print(json_data)
+        for n in json_data['leaf_nodes']:
+            n['geometry'] = shape(n['geometry'])
+        for e in json_data['edges']:
+            e['geometry'] = shape(e['geometry'])
+        for _, n in json_data['metanodes'].items():
+            n['geometry'] = shape(n['geometry'])
+        for k, v in json_data.items():
+            setattr(self, k, v)
 
-        self.height = 0
-        self.metanodes = {}
-        self.metaedges = {}
-        self.root = graph.getId()
-        self.retrieve_hierarchy(graph)
+        # Convert to format that is friendly to isect implementation
+        self.edges_isect = [tuple(e['geometry'].coords) for e in self.edges]
 
         if penalty_func_type == 'piecewise-linear':
             self.penalty_func = piecewise_linear_func
@@ -130,95 +136,6 @@ class MultiLevelMetrics:
         else:
             self.weight_func = get_exponential_decay_func(EXPONENTIAL_DECAY_RATE, self.height)
 
-    # Construct a simple node (graph) hierarchy data structure from the tulip graph and count levels
-    # This is the same level counting method in the Bourqui multi-level force layout paper.
-    def retrieve_hierarchy(self, graph):
-        def dfs(g, cur_height):
-            node = {'id': g.getId(),
-                    'geometry': None,
-                    'diameter': 0,
-                    'desc_metanodes': {},
-                    'parent_metanode': None,
-                    'leaf_nodes': {},
-                    'level': cur_height}
-
-            # For finding whether a node is in a subgraph
-            for leaf in g.getNodes():
-                node['leaf_nodes'][leaf.id] = True
-            # For finding whether two meta-nodes are on the same path of the node hierarchy
-            for s in g.getDescendantGraphs():
-                node['desc_metanodes'][s.getId()] = True
-
-            self.height = max(self.height, cur_height + 1)
-            for s in g.getSubGraphs():
-                dfs(s, cur_height + 1)
-                self.metanodes[s.getId()]['parent_metanode'] = g.getId()
-
-            # Add the field parent_metanode to the leaf node
-            for leaf in g.getNodes():
-                tmp = self.leaf_nodes[leaf.id]
-                if tmp['parent_metanode'] is None:
-                    tmp['parent_metanode'] = g.getId()
-
-            # Compute convex hull of this sub-graph in post-order
-            if g.numberOfSubGraphs() == 0:
-                # compute a convex hull of its leaf nodes
-                coords = tlp.computeConvexHull(g)
-                node['geometry'] = Polygon([(c.x(), c.y()) for c in coords])
-            else:
-                # union the convex hull of its sub-graphs
-                node['geometry'] = MultiPolygon([self.metanodes[s.getId()]['geometry'] for s in g.getSubGraphs()]).convex_hull
-
-            # Note that we don't compute the real diameter for a polygon, but instead, only use the diagonal of
-            # the axis aligned bounding box to approximate the diameter, which is cheap to compute
-            bbox = node['geometry'].bounds
-            node['diameter'] = Point(bbox[0], bbox[1]).distance(Point(bbox[2], bbox[3]))
-
-            self.metanodes[g.getId()] = node
-
-        # Get the metanodes
-        dfs(graph, 0)
-        if self.debug:
-            pprint(self.metanodes)
-
-        # iterate all pairs of metanodes that contains the two leaf nodes of leaf edge e
-        def metanodes_pair_iter(e):
-            src, tgt = graph.ends(e)
-            p1 = self.leaf_nodes[src.id]['parent_metanode']
-            p2 = self.leaf_nodes[tgt.id]['parent_metanode']
-            if self.debug:
-                assert p1 is not None
-                assert p2 is not None
-
-            metaedge_req = lambda i, j: i != self.root and j != self.root and i != j and \
-                                        j not in self.metanodes[i]['desc_metanodes'] and \
-                                        i not in self.metanodes[j]['desc_metanodes']
-            # Traverse from the leaf node upward all the way to root graph
-            while p1 != self.root:
-                p2 = self.leaf_nodes[tgt.id]['parent_metanode']
-                while metaedge_req(p1, p2):
-                    yield min(p1, p2), max(p1, p2)
-                    p2 = self.metanodes[p2]['parent_metanode']
-                p1 = self.metanodes[p1]['parent_metanode']
-
-        # Get the metaedges, which are edges connecting two metanodes
-        edge_id_format = '{}-{}'
-        for e in graph.getEdges():
-            for p1, p2 in metanodes_pair_iter(e):
-                edge_id = edge_id_format.format(p1, p2)
-                if edge_id not in self.metaedges:
-                    self.metaedges[edge_id] = {'id': edge_id, 'ends': [p1, p2],
-                                               'level': min(self.metanodes[p1]['level'], self.metanodes[p2]['level']),
-                                               'leaf_edges': [e.id],
-                                               'geometry': None}
-                else:
-                    self.metaedges[edge_id]['leaf_edges'].append(e.id)
-        for _, me in self.metaedges.iteritems():
-            me['geometry'] = MultiLineString([self.edges[eid]['geometry'] for eid in me['leaf_edges']]).convex_hull
-
-        if self.debug:
-            pprint(self.metaedges)
-
     # For detailed penalty and count information
     # Each cell(i,j) corresponds to the penalty / count of items at level i and level j
     def get_initial_level_table(self, is_symmetric, is_node_node):
@@ -228,13 +145,13 @@ class MultiLevelMetrics:
         # We do not check crossing between leaf node and metanode
         # Here is just for printing out this message
         if is_node_node:
-            for i in xrange(n - 1):
+            for i in range(n - 1):
                 table[-1][i] = 'NA'
                 table[i][-1] = 'NA'
         # It is supposed to be a symmetric matrix so we only use upper half of it
         if is_symmetric:
-            for i in xrange(n):
-                for j in xrange(i):
+            for i in range(n):
+                for j in range(i):
                     table[i][j] = 'NA'
         return table
 
@@ -254,7 +171,8 @@ class MultiLevelMetrics:
                 max_overlap = min(geom_e.length, v['diameter'])
             p = self.penalty_func(o, max_overlap)
             if self.debug:
-                print '(meta-)node {} overlaps with edge {} (overlap area: {}, penalty: {})'.format(v, e, isect.length, p)
+                print('(meta-)node {} overlaps with edge {} (overlap area: {}, penalty: {})'
+                      .format(v['id'], e['id'], isect.length, p))
             return True, p
         else:
             return False, 0
@@ -267,7 +185,8 @@ class MultiLevelMetrics:
             isect = geom1.intersection(geom2)
             p = self.penalty_func(isect.area, min(geom1.area, geom2.area))
             if self.debug:
-                print '(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'.format(v1, v2, isect.area, p)
+                print('(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'
+                      .format(v1['id'], v2['id'], isect.area, p))
             return True, p
         else:
             return False, 0
@@ -298,12 +217,14 @@ class MultiLevelMetrics:
                     p = self.angle_penalty_func(angle) * self.penalty_func(o, max_overlap)
 
             if self.debug:
-                print 'Edge {} intersects with edge {}: angle {} (deg) penalty {}'.format(e1, e2, angle * 180 / math.pi, p)
+                print('Edge {} intersects with edge {}: angle {} (deg) penalty {}'
+                      .format(e1['id'], e2['id'], angle * 180 / math.pi, p))
             return True, p
         else:
             return False, 0
 
     # Get the overall node-node penalty and count for the whole graph
+    @timeit
     def get_graph_node_node_penalty(self):
         penalty = 0
         count = 0
@@ -312,7 +233,7 @@ class MultiLevelMetrics:
 
         for i, n1 in enumerate(self.leaf_nodes):
             # leaf node x leaf node
-            for j in xrange(i + 1, len(self.leaf_nodes)):       # Make sure no duplicate pairs of nodes are considered
+            for j in range(i + 1, len(self.leaf_nodes)):       # Make sure no duplicate pairs of nodes are considered
                 n2 = self.leaf_nodes[j]
                 is_isect, p = self.get_node_node_penalty(n1, n2)
                 if is_isect:
@@ -334,9 +255,9 @@ class MultiLevelMetrics:
             #                 count_lvl[lvl][-1] += 1
             #                 penalty_lvl[lvl][-1] += p
 
-        for id1, mn1 in self.metanodes.iteritems():
+        for id1, mn1 in self.metanodes.items():
             if id1 != self.root:
-                for id2, mn2 in self.metanodes.iteritems():
+                for id2, mn2 in self.metanodes.items():
                     if id2 != self.root and id1 < id2 and id2 not in mn1['desc_metanodes'] and id1 not in mn2['desc_metanodes']:
                         is_isect, p = self.get_node_node_penalty(mn1, mn2)
                         if is_isect:
@@ -354,6 +275,7 @@ class MultiLevelMetrics:
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl}
 
+    @timeit
     def get_graph_node_edge_penalty(self):
         penalty = 0
         count = 0
@@ -378,7 +300,7 @@ class MultiLevelMetrics:
         # for eid, e in self.metaedges.iteritems():
         #     s, t = e['ends']
         #     if s != t:
-                for metanode_id, mn in self.metanodes.iteritems():
+                for metanode_id, mn in self.metanodes.items():
                     if metanode_id != self.root and metanode_id != s and metanode_id != t:
                         is_isect, p = self.get_node_edge_penalty(e, mn)
                         if is_isect:
@@ -393,43 +315,30 @@ class MultiLevelMetrics:
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl}
 
+    @timeit
     def get_graph_edge_edge_penalty(self):
         penalty = 0
-        count = 0
-        penalty_lvl = self.get_initial_level_table(True, False)
-        count_lvl = self.get_initial_level_table(True, False)
+        # count = 0
+        # penalty_lvl = self.get_initial_level_table(True, False)
+        # count_lvl = self.get_initial_level_table(True, False)
 
-        # between leaf edges
-        for i, e1 in enumerate(self.edges):
-            s, t = e1['ends']
-            for j in xrange(i + 1, len(self.edges)):
-                e2 = self.edges[j]
-                # Make sure e1 and e2 do not connect the same node and they are not self connecting edges
-                if s not in e2['ends'] and t not in e2['ends'] and s != t and e2['ends'][0] != e2['ends'][1]:
-                    is_intersect, p = self.get_edge_edge_penalty(e1, e2)
-                    if is_intersect:
-                        count += 1
-                        penalty += p
-                        count_lvl[-1][-1] += 1
-                        penalty_lvl[-1][-1] += p
-        # between metaedges
-        # TODO do we exclude the degenerate case? Otherwise the leaf edge would be counted multiple times?
-        # for eid1, e1 in self.metaedges.iteritems():
-        #     s1, t1 = e1['ends']
-        #     for eid2, e2 in self.metaedges.iteritems():
-        #         if eid1 < eid2 and s1 not in e2['ends'] and t1 not in e2['ends']:
-        #             is_intersect, p = self.get_edge_edge_penalty(e1, e2)
-        #             if is_intersect:
-        #                 count += 1
-        #                 min_lvl = min(e1['level'], e2['level'])
-        #                 max_lvl = max(e1['level'], e2['level'])
-        #                 penalty += self.weight_func(min_lvl) * p
-        #                 # Fill the upper-right triangle of the counting table
-        #                 count_lvl[min_lvl][max_lvl] += 1
-        #                 penalty_lvl[min_lvl][max_lvl] += p
+        intersections = isect_segments_include_segments(self.edges_isect)
+        # print(len(intersections))
+        # print(intersections)
+        # FIXME potential bug: multiple line segments intersect at the same point
+        for isect in intersections:
+            segments = isect[1]
+            angle = get_angle_between_line_segments_v2(segments[0], segments[1])
+            p = self.angle_penalty_func(angle)
+            penalty += p
 
-        return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
-                'total_count': count, 'count_by_level': count_lvl}
+            if self.debug:
+                # we cannot find out the edge id easily b/c use of 3rd party lib
+                print('Edge xx intersects with edge xx: angle {} (deg) penalty {}'.format(angle * 180 / math.pi, p))
+
+        count = len(intersections)
+
+        return {'total_penalty': penalty, 'total_count': count}
 
 
 # Print out the penalty and count by level
@@ -437,8 +346,8 @@ def print_by_level(p, c, is_symmetric):
     n = len(p[0])
     header_format = '\t{:5}' + '{:>10}' * (n - 1)
     # row_format = '\t{:5}' + '{:>10.2f}' * (n - 1)
-    print '\tPenalty by level (max level corresponds to leaf, level 0 to the whole graph, before level weighting):'
-    print header_format.format('level', *range(1, n))
+    print('\tPenalty by level (max level corresponds to leaf, level 0 to the whole graph, before level weighting):')
+    print(header_format.format('level', *range(1, n)))
     for i in range(1, n):
         row_format = '\t{:5}'
         for j in range(1, n):
@@ -446,92 +355,63 @@ def print_by_level(p, c, is_symmetric):
                 row_format += '{:>10}'
             else:
                 row_format += '{:>10.2f}'
-        print row_format.format(i, *p[i][1:])
-    print
+        print(row_format.format(i, *p[i][1:]))
+    print()
 
-    print '\tCount by level:'
+    print('\tCount by level:')
     row_format = '\t{:5}' + '{:>10}' * (n - 1)
-    print header_format.format('level', *range(1, n))
+    print(header_format.format('level', *range(1, n)))
     for i in range(1, n):
-        print row_format.format(i, *c[i][1:])
-    print
-
-
-# Handy function to get a pretty print out of results
-def run_and_print(filename, **metrics_args):
-    graph = tlp.loadGraph(filename)
-    metrics = MultiLevelMetrics(graph, **metrics_args)
-    print '===== ', filename, ' ====='
-    print '#nodes: {}  #edges: {}  height of node hiearachy: {}'.format(graph.numberOfNodes(), graph.numberOfEdges(), metrics.height)
-    print
-
-    nn = metrics.get_graph_node_node_penalty()
-    print 'Node-node penalty: {:10.2f}   count: {:7}'.format(nn['total_penalty'], nn['total_count'])
-    print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
-
-    ne = metrics.get_graph_node_edge_penalty()
-    print 'Node-edge penalty: {:10.2f}   count: {:7}'.format(ne['total_penalty'], ne['total_count'])
-    print_by_level(ne['penalty_by_level'], ne['count_by_level'], False)
-
-    ee = metrics.get_graph_edge_edge_penalty()
-    print 'Edge-edge penalty: {:10.2f}   count: {:7}'.format(ee['total_penalty'], ee['total_count'])
-    print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
-
-    print '===== END ====='
-    print
+        print(row_format.format(i, *c[i][1:]))
+    print()
 
 
 def run_store_print(file_dir, filename, **metrics_args):
-    data_path = os.path.join(file_dir, filename + '.tlp')
+    data_path = os.path.join(file_dir, filename + '.json')
     # image_path = os.path.join(file_dir, filename + '.png')
     json_path = os.path.join(file_dir, filename + '_result.json')
 
-    graph = tlp.loadGraph(data_path)
-    metrics = MultiLevelMetrics(graph, **metrics_args)
-    print '===== ', filename, ' ====='
-    print '#nodes: {}  #edges: {}  height of node hiearachy: {}'.format(graph.numberOfNodes(), graph.numberOfEdges(), metrics.height)
-    print
+    metrics = MultiLevelMetrics(data_path, **metrics_args)
+    print('===== ', filename, ' =====')
+    print('#nodes: {}  #edges: {}  height of hierarchy: {}'.format(len(metrics.leaf_nodes), len(metrics.edges), metrics.height))
+    print()
 
     json_data = {
         'tlpFile': filename + '.tlp',           # only the filename not the full path
         'graph': {
-            'numberOfNodes': graph.numberOfNodes(),
-            'numberOfEdges': graph.numberOfEdges(),
+            'numberOfNodes': len(metrics.leaf_nodes),
+            'numberOfEdges': len(metrics.edges),
             'numberOfLevels': metrics.height,
         },
         'start_time': timer(),
-        'metrics': {}
+        'metrics': {
+            'area': metrics.bounding_box
+        }
     }
 
-    s = timer()
     nn = metrics.get_graph_node_node_penalty()
-    e = timer()
-    nn['executionTime'] = e - s     # in seconds
     json_data['metrics']['nn'] = nn
-    print 'Node-node penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(nn['total_penalty'], nn['total_count'], nn['executionTime'])
+    print('Node-node penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'
+          .format(nn['total_penalty'], nn['total_count'], nn['execution_time']))
     print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
 
-    s = timer()
     ne = metrics.get_graph_node_edge_penalty()
-    e = timer()
-    ne['executionTime'] = e - s     # in seconds
     json_data['metrics']['ne'] = ne
-    print 'Node-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(ne['total_penalty'], ne['total_count'], ne['executionTime'])
+    print('Node-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'
+          .format(ne['total_penalty'], ne['total_count'], ne['execution_time']))
     print_by_level(ne['penalty_by_level'], ne['count_by_level'], False)
 
-    s = timer()
     ee = metrics.get_graph_edge_edge_penalty()
-    e = timer()
-    ee['executionTime'] = e - s     # in seconds
     json_data['metrics']['ee'] = ee
-    print 'Edge-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'.format(ee['total_penalty'], ee['total_count'], ee['executionTime'])
-    print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
+    print('Edge-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'
+          .format(ee['total_penalty'], ee['total_count'], ee['execution_time']))
+    # print_by_level(ee['penalty_by_level'], ee['count_by_level'], True)
 
     json_data['end_time'] = timer()
     json.dump(json_data, open(json_path, 'w'))
 
-    print '===== END ====='
-    print
+    print('===== END =====')
+    print()
 
 
 if __name__ == '__main__':
@@ -560,4 +440,4 @@ if __name__ == '__main__':
     # print 'Edge-edge overlap: penalty: {}  count: {}'.format(res[0], res[1])
     # print
 
-    run_and_print('../data/test2.tlp', penalty_func_type='linear', debug=True)
+    run_store_print('../../data/test', 'test0', penalty_func_type='linear', debug=True)

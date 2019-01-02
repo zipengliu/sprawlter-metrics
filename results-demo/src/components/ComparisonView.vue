@@ -40,7 +40,7 @@
                     neCount: r.metrics.ne.total_count,
                     eePenalty: r.metrics.ee.total_penalty,
                     eeCount: r.metrics.ee.total_count,
-                    executionTime: r.metrics.nn.executionTime + r.metrics.ne.executionTime + r.metrics.ee.executionTime,
+                    executionTime: r.metrics.nn.execution_time + r.metrics.ne.execution_time + r.metrics.ee.execution_time,
                 }));
             }
         },
