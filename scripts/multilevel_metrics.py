@@ -386,8 +386,14 @@ def run_store_print(file_dir, filename, **metrics_args):
         'start_time': timer(),
         'metrics': {
             'area': metrics.bounding_box
+        },
+        'parameters': {
+            'alpha': ALPHA,
+            'glancingAnglePenalty': GLANCING_ANGLE_PENALTY,
         }
     }
+    for k, v in metrics_args.items():
+        json_data['parameters'][k] = v
 
     nn = metrics.get_graph_node_node_penalty()
     json_data['metrics']['nn'] = nn

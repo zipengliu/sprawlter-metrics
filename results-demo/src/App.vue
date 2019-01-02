@@ -1,7 +1,10 @@
 <template>
     <div id="app">
         <div class="timestamp" v-if="timestamp">
-            {{ timestamp.toString() }}
+            Time: {{ timestamp.toString() }}
+        </div>
+        <div class="parameters" v-if="results && results[0].parameters">
+            Parameters: {{ JSON.stringify(results[0].parameters) }}
         </div>
         <ComparisonView :results="results" :dataPath="dataPath" />
     </div>
@@ -44,7 +47,7 @@
     color: #2c3e50;
     margin-top: 60px;
   }
-    .timestamp {
+    .timestamp, .parameters {
         text-align: left;
     }
 </style>
