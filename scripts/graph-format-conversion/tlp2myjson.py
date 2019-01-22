@@ -10,30 +10,43 @@ import sys
 import os
 
 
-def convert(input_path):
-    graph = tlp.loadGraph(input_path)
+def convert(input_path, subgraph_id=None, leaf_only=False):
+    whole_graph = tlp.loadGraph(input_path)
+    if subgraph_id is not None:
+        graph = whole_graph.getSubGraph(subgraph_id)
+    else:
+        graph = whole_graph
+    print(graph)
 
     # Retrieve nodes and edges from graph and construct Shapely geometries
     view_layout = graph.getLayoutProperty('viewLayout')
     view_size = graph.getSizeProperty('viewSize')
-    # THe node id should equal to the index in this array  TODO: verify whether this is true
+
     leaf_nodes = [{'id': n.id, 'parent_metanode': None,        # fulfill later
                    'geometry': Point(view_layout[n].x(), view_layout[n].y()).buffer(view_size[n][0] / 2.0, cap_style=CAP_STYLE.round),
                    'diameter': view_size[n][0]}
                   for n in graph.nodes()]
 
-    # THe edge id should equal to the index in this array  TODO: verify whether this is true
     edges = []
+    check_dup = {}
     for e in graph.getEdges():
         src, tgt = graph.ends(e)
-        edges.append({'id': e.id,
-                           'ends': (src.id, tgt.id),
-                           'geometry': LineString([(view_layout[src].x(), view_layout[src].y()),
-                                                   (view_layout[tgt].x(), view_layout[tgt].y())])})
+        if src.id > tgt.id:
+            tmp = src
+            src = tgt
+            tgt = tmp
+        edge_id = '{}-{}'.format(src.id, tgt.id)
+        # remove duplicate and self-connecting edges
+        if edge_id not in check_dup and src.id != tgt.id:
+            edges.append({'id': e.id,
+                          'ends': (src.id, tgt.id),
+                          'geometry': LineString([(view_layout[src].x(), view_layout[src].y()),
+                                                  (view_layout[tgt].x(), view_layout[tgt].y())])})
+            check_dup[edge_id] = True
 
     bbox = tlp.computeBoundingBox(graph)
     root = graph.getId()
-    height = {'a': 0}
+    height = {'a': 1}
     metanodes = {}
 
     # Construct a simple node (graph) hierarchy data structure from the tulip graph and count levels
@@ -82,7 +95,8 @@ def convert(input_path):
 
         metanodes[g.getId()] = node
 
-    dfs(graph, 0)
+    if not leaf_only:
+        dfs(graph, root)
 
     # Output json file at the same directory with same filename but "json" extension
     output_path = re.sub(r'\.tlp$', '.json', input_path)
@@ -92,7 +106,7 @@ def convert(input_path):
         n['geometry'] = mapping(n['geometry'])
     for e in edges:
         e['geometry'] = mapping(e['geometry'])
-    for _, n in metanodes.iteritems():
+    for _, n in metanodes.items():
         n['geometry'] = mapping(n['geometry'])
 
     json_data = {
@@ -104,11 +118,12 @@ def convert(input_path):
         'bounding_box': [[bbox[0].x(), bbox[0].y()], [bbox[1].x(), bbox[1].y()]]
     }
     json.dump(json_data, open(output_path, 'w'))
-    print 'Converted to ', output_path
+    print('Converted to ', output_path, ' #nodes:', len(leaf_nodes), ' #edges: ', len(edges), ' height: ', height['a'])
 
 
 if __name__ == '__main__':
-    tlp_file = '../../data/test/test2.tlp' if len(sys.argv) < 2 else sys.argv[1]
+    tlp_file = '../../../data/test/test2.tlp' if len(sys.argv) < 2 else sys.argv[1]
+    subgraph_id = None if len(sys.argv) < 3 else int(sys.argv[2])
 
     if os.path.isdir(tlp_file):
         # convert every tlp file under this directory
@@ -116,6 +131,6 @@ if __name__ == '__main__':
             if filename.endswith('.tlp'):
                 convert(os.path.join(tlp_file, filename))
     elif os.path.isfile(tlp_file):
-        convert(tlp_file)
+        convert(tlp_file, subgraph_id=subgraph_id)
     else:
-        print 'Error: no file or directory found'
+        print('Error: no file or directory found')
