@@ -9,14 +9,31 @@ import json
 import sys
 import os
 
+DUMMY_LINE_SEGMENT = LineString([(0, 0), (0, 0)])
 
-def convert(input_path, subgraph_id=None, leaf_only=False):
-    whole_graph = tlp.loadGraph(input_path)
-    if subgraph_id is not None:
-        graph = whole_graph.getSubGraph(subgraph_id)
-    else:
-        graph = whole_graph
-    print(graph)
+
+# Chop out the part of line segment that overlaps with the node
+# Return the new shortened line segment
+# If the two ndoes overlap with each other, return a dummy line segment (that won't intersect with anything)
+# n1 and n2 is the node geometry (a circle / rectangle / polygon), n1coords and n2coords is the coordinates
+#   of centroid of the two nodes
+def chop_segment(n1, n2, n1coords, n2coords):
+    if n1.intersects(n2):
+        return DUMMY_LINE_SEGMENT
+
+    assert(Point(n1coords).within(n1))
+    assert(Point(n2coords).within(n2))
+    full_line_segment = LineString([n1coords, n2coords])
+    assert(n1.intersects(full_line_segment))
+    assert(n2.intersects(full_line_segment))
+
+    x1 = full_line_segment.intersection(n1.exterior)
+    x2 = full_line_segment.intersection(n2.exterior)
+    return LineString([x1, x2])
+
+
+def convert(input_path, leaf_only=False):
+    graph = tlp.loadGraph(input_path)
 
     # Retrieve nodes and edges from graph and construct Shapely geometries
     view_layout = graph.getLayoutProperty('viewLayout')
@@ -27,6 +44,10 @@ def convert(input_path, subgraph_id=None, leaf_only=False):
                    'diameter': view_size[n][0]}
                   for n in graph.nodes()]
 
+    node_mapping = {}
+    for n in leaf_nodes:
+        node_mapping[n['id']] = n
+
     edges = []
     check_dup = {}
     for e in graph.getEdges():
@@ -36,12 +57,15 @@ def convert(input_path, subgraph_id=None, leaf_only=False):
             src = tgt
             tgt = tmp
         edge_id = '{}-{}'.format(src.id, tgt.id)
+
         # remove duplicate and self-connecting edges
         if edge_id not in check_dup and src.id != tgt.id:
             edges.append({'id': e.id,
                           'ends': (src.id, tgt.id),
-                          'geometry': LineString([(view_layout[src].x(), view_layout[src].y()),
-                                                  (view_layout[tgt].x(), view_layout[tgt].y())])})
+                          'geometry': chop_segment(node_mapping[src.id]['geometry'], node_mapping[tgt.id]['geometry'],
+                                                   (view_layout[src].x(), view_layout[src].y()),
+                                                   (view_layout[tgt].x(), view_layout[tgt].y()))
+                          })
             check_dup[edge_id] = True
 
     bbox = tlp.computeBoundingBox(graph)
@@ -123,7 +147,6 @@ def convert(input_path, subgraph_id=None, leaf_only=False):
 
 if __name__ == '__main__':
     tlp_file = '../../../data/test/test2.tlp' if len(sys.argv) < 2 else sys.argv[1]
-    subgraph_id = None if len(sys.argv) < 3 else int(sys.argv[2])
 
     if os.path.isdir(tlp_file):
         # convert every tlp file under this directory
@@ -131,6 +154,6 @@ if __name__ == '__main__':
             if filename.endswith('.tlp'):
                 convert(os.path.join(tlp_file, filename))
     elif os.path.isfile(tlp_file):
-        convert(tlp_file, subgraph_id=subgraph_id)
+        convert(tlp_file)
     else:
         print('Error: no file or directory found')
