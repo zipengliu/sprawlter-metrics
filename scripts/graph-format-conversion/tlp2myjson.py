@@ -32,7 +32,7 @@ def chop_segment(n1, n2, n1coords, n2coords):
     return LineString([x1, x2])
 
 
-def convert(input_path, leaf_only=False):
+def convert(input_path, leaf_only=False, bounding_shape='convex_hull'):
     graph = tlp.loadGraph(input_path)
 
     # Retrieve nodes and edges from graph and construct Shapely geometries
@@ -104,18 +104,28 @@ def convert(input_path, leaf_only=False):
                 tmp['parent_metanode'] = g.getId()
 
         # Compute convex hull of this sub-graph in post-order
-        if g.numberOfSubGraphs() == 0:
-            # compute a convex hull of its leaf nodes
-            coords = tlp.computeConvexHull(g)
-            node['geometry'] = Polygon([(c.x(), c.y()) for c in coords])
-        else:
-            # union the convex hull of its sub-graphs
-            node['geometry'] = MultiPolygon([metanodes[s.getId()]['geometry'] for s in g.getSubGraphs()]).convex_hull
+        if bounding_shape == 'convex_hull':
+            if g.numberOfSubGraphs() == 0:
+                # compute a convex hull of its leaf nodes
+                coords = tlp.computeConvexHull(g)
+                node['geometry'] = Polygon([(c.x(), c.y()) for c in coords])
+            else:
+                # union the convex hull of its sub-graphs
+                node['geometry'] = MultiPolygon([metanodes[s.getId()]['geometry'] for s in g.getSubGraphs()]).convex_hull
 
-        # Note that we don't compute the real diameter for a polygon, but instead, only use the diagonal of
-        # the axis aligned bounding box to approximate the diameter, which is cheap to compute
-        bbox = node['geometry'].bounds
-        node['diameter'] = Point(bbox[0], bbox[1]).distance(Point(bbox[2], bbox[3]))
+            # Note that we don't compute the real diameter for a polygon, but instead, only use the diagonal of
+            # the axis aligned bounding box to approximate the diameter, which is cheap to compute
+            bbox = node['geometry'].bounds
+            node['diameter'] = Point(bbox[0], bbox[1]).distance(Point(bbox[2], bbox[3]))
+        elif bounding_shape == 'circle':
+            center, fur = tlp.computeBoundingRadius(g)
+            radius = center.dist(fur)
+            node['geometry'] = Point(center.x(), center.y()).buffer(radius, cap_style=CAP_STYLE.round)
+            node['diameter'] = 2 * radius
+        else:
+            bbox = tlp.computeBoundingBox(g)
+            node['geometry'] = Polygon([(c.x(), c.y()) for c in bbox])
+            node['diameter'] = bbox[0].dist(bbox[1])
 
         metanodes[g.getId()] = node
 
@@ -152,8 +162,8 @@ if __name__ == '__main__':
         # convert every tlp file under this directory
         for filename in os.listdir(tlp_file):
             if filename.endswith('.tlp'):
-                convert(os.path.join(tlp_file, filename))
+                convert(os.path.join(tlp_file, filename), bounding_shape='circle')
     elif os.path.isfile(tlp_file):
-        convert(tlp_file)
+        convert(tlp_file, bounding_shape='circle')
     else:
         print('Error: no file or directory found')

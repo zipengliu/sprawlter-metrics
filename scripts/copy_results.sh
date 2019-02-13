@@ -4,7 +4,7 @@ if [[ $# -eq 0 ]] ; then
 fi
 
 results_dir=../results-demo/public/data/$1
-src_dir=../../data/real-world-compiled-2
+src_dir=../../data/ALL-2
 
 if [ ! -d $results_dir ]; then
     mkdir $results_dir

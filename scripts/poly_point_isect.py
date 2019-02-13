@@ -24,7 +24,7 @@ __all__ = (
 # their end points form the intersection point.
 USE_IGNORE_SEGMENT_ENDINGS = True
 
-USE_DEBUG = True
+USE_DEBUG = False
 
 USE_VERBOSE = False
 
@@ -47,7 +47,7 @@ X, Y = 0, 1
 # -----------------------------------------------------------------------------
 # Switchable Number Implementation
 
-NUMBER_TYPE = 'native'
+NUMBER_TYPE = 'numpy'
 
 if NUMBER_TYPE == 'native':
     Real = float
@@ -64,7 +64,7 @@ elif NUMBER_TYPE == 'numpy':
     import numpy
     Real = numpy.float64
     del numpy
-    NUM_EPS = Real("1e-10")
+    NUM_EPS = Real("1e-18")
     NUM_INF = Real(float("inf"))
 elif NUMBER_TYPE == 'gmpy2':
     # Not passing tests!
@@ -322,8 +322,8 @@ class SweepLine:
         self._current_event_point_x = p[X]
 
     def insert(self, event):
-        assert(event not in self._events_current_sweep)
-        assert(not USE_VERTICAL or event.type != Event.Type.START_VERTICAL)
+        # assert(event not in self._events_current_sweep)
+        # assert(not USE_VERTICAL or event.type != Event.Type.START_VERTICAL)
         if USE_DEBUG:
             assert(event.in_sweep == False)
             assert(event.other.in_sweep == False)
