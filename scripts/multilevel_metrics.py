@@ -142,6 +142,10 @@ class MultiLevelMetrics:
         else:
             self.weight_func = get_exponential_decay_func(EXPONENTIAL_DECAY_RATE, self.height)
 
+        self.total_node_size = self.get_total_node_size()
+        self.total_edge_length = self.get_total_edge_length()
+        self.total_area = self.get_total_area()
+
     # For detailed penalty and count information
     # Each cell(i,j) corresponds to the penalty / count of items at level i and level j
     def get_initial_level_table(self, is_symmetric, is_node_node):
@@ -251,19 +255,6 @@ class MultiLevelMetrics:
                     count_lvl[-1][-1] += 1
                     penalty_lvl[-1][-1] += p
 
-            # leaf node x subgraph
-            # for metanode_id in self.metanodes:
-            #     if metanode_id != self.root:
-            #         mn = self.metanodes[metanode_id]
-            #         if n1['id'] not in mn['leaf_nodes']:
-            #             is_isect, p = self.get_node_node_penalty(n1, mn)
-            #             if is_isect:
-            #                 count += 1
-            #                 lvl = mn['level']
-            #                 penalty += self.weight_func(lvl) * p
-            #                 count_lvl[lvl][-1] += 1
-            #                 penalty_lvl[lvl][-1] += p
-
         for id1, mn1 in self.metanodes.items():
             if id1 != self.root:
                 for id2, mn2 in self.metanodes.items():
@@ -281,8 +272,12 @@ class MultiLevelMetrics:
                             count_lvl[min_lvl][max_lvl] += 1
                             penalty_lvl[min_lvl][max_lvl] += p
 
+        density = self.total_node_size / self.total_area
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
-                'total_count': count, 'count_by_level': count_lvl}
+                'total_count': count, 'count_by_level': count_lvl,
+                'density': density,
+                'normalized_penalty': penalty / density
+                }
 
     @timeit
     def get_graph_node_edge_penalty(self):
@@ -320,8 +315,12 @@ class MultiLevelMetrics:
                             count_lvl[mn['level']][-1] += 1
                             penalty_lvl[mn['level']][-1] += p
 
+        density = self.total_edge_length / self.total_area
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
-                'total_count': count, 'count_by_level': count_lvl}
+                'total_count': count, 'count_by_level': count_lvl,
+                'density': density,
+                'normalized_penalty': penalty / density
+                }
 
     @timeit
     def get_graph_edge_edge_penalty(self):
@@ -416,7 +415,28 @@ class MultiLevelMetrics:
                                 penalty += p
         # if USE_LOG:
         #     json.dump(crossings, open('test_mine.json', 'w'))
-        return {'total_penalty': penalty, 'total_count': count}
+        density = len(self.edges) / self.total_area
+        return {'total_penalty': penalty, 'total_count': count, 'density': density,
+                'normalized_penalty': penalty / density}
+
+    def get_total_node_size(self):
+        total_node_size = 0
+        for n in self.leaf_nodes:
+            total_node_size += n['geometry'].area
+        for mn_id, mn in self.metanodes.items():
+            if int(mn_id) != self.root:
+                total_node_size += mn['geometry'].area
+        return total_node_size
+
+    def get_total_edge_length(self):
+        total_edge_length = 0
+        for e in self.edges:
+            total_edge_length += e['geometry'].length
+        return total_edge_length
+
+    def get_total_area(self):
+        bb = self.bounding_box
+        return (bb[1][0] - bb[0][0]) * (bb[1][1] - bb[0][1])
 
 
 # Print out the penalty and count by level
@@ -450,22 +470,29 @@ def run_store_print(file_dir, filename, **metrics_args):
     json_path = os.path.join(file_dir, filename + '_result.json')
 
     metrics = MultiLevelMetrics(data_path, **metrics_args)
+    number_of_metanodes = len(metrics.metanodes.keys())
+    if str(metrics.root) in metrics.metanodes:
+        number_of_metanodes -= 1
+
     print('===== ', filename, ' =====')
-    print('#nodes: {}  #edges: {}  height of hierarchy: {}  root ID: {}'.format(len(metrics.leaf_nodes), len(metrics.edges), metrics.height, metrics.root))
+    print('#nodes: {}  #edges: {}  #levels: {} #metanodes: {} root ID: {}'.format(len(metrics.leaf_nodes), len(metrics.edges),
+                                                                                  metrics.height, number_of_metanodes, metrics.root))
+    print('totoal node size: {:.2f} total edge length: {:.2f}'.format(metrics.total_node_size, metrics.total_edge_length))
     print()
 
     json_data = {
         'tlpFile': filename + '.tlp',           # only the filename not the full path
         'graph': {
             'numberOfNodes': len(metrics.leaf_nodes),
-            'numberOfMetaNodes': len(metrics.metanodes.keys()),
+            'numberOfMetaNodes': number_of_metanodes,
             'numberOfEdges': len(metrics.edges),
             'numberOfLevels': metrics.height,
+            'totalNodeSize': metrics.total_node_size,
+            'totalEdgeLength': metrics.total_edge_length,
+            'totalArea': metrics.total_area
         },
         'start_time': wall_time(),
-        'metrics': {
-            'area': metrics.bounding_box
-        },
+        'metrics': {},
         'parameters': {
             'alpha': ALPHA,
             'glancingAnglePenalty': GLANCING_ANGLE_PENALTY,
@@ -477,15 +504,17 @@ def run_store_print(file_dir, filename, **metrics_args):
     nn = metrics.get_graph_node_node_penalty()
     # nn = {}
     json_data['metrics']['nn'] = nn
-    print('Node-node penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'
-          .format(nn['total_penalty'], nn['total_count'], nn['execution_time']))
+    print('Node-node penalty: {:.2f}   count: {}  density: {:.2f}  normalized penalty: {:.2f}'
+          .format(nn['total_penalty'], nn['total_count'], nn['density'], nn['normalized_penalty']))
+    print('Execution time: {:.2f}'.format(nn['execution_time']))
     print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
 
     ne = metrics.get_graph_node_edge_penalty()
     # ne = {}
     json_data['metrics']['ne'] = ne
-    print('Node-edge penalty: {:10.2f}   count: {:7}  execution time: {:6.2f}'
-          .format(ne['total_penalty'], ne['total_count'], ne['execution_time']))
+    print('Node-edge penalty: {:.2f}   count: {}  density: {:.2f}  normalized penalty: {:.2f}'
+          .format(ne['total_penalty'], ne['total_count'], ne['density'], ne['normalized_penalty']))
+    print('Execution time: {:.2f}'.format(ne['execution_time']))
     print_by_level(ne['penalty_by_level'], ne['count_by_level'], False)
 
     # Bentlety-Ottamann
@@ -497,8 +526,9 @@ def run_store_print(file_dir, filename, **metrics_args):
     # My naive square time implementation
     ee2 = metrics.get_graph_edge_edge_penalty_naive()
     json_data['metrics']['ee'] = ee2
-    print('Edge-edge penalty (quadratic algorithm): {:10.2f}   count: {:7}  execution time: {:6.2f}'
-          .format(ee2['total_penalty'], ee2['total_count'], ee2['execution_time']))
+    print('Edge-edge penalty (quadratic algorithm): {:.2f}  count: {}  density: {:.2f}  normalized penalty: {:.2f}'
+          .format(ee2['total_penalty'], ee2['total_count'],  ee2['density'], ee2['normalized_penalty']))
+    print('Execution time: {:.2f}'.format(ee2['execution_time']))
 
     json_data['end_time'] = wall_time()
     json.dump(json_data, open(json_path, 'w'))

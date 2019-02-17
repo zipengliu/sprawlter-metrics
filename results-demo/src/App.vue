@@ -9,6 +9,9 @@
         <div class="parameters" v-if="results && results[0].parameters">
             Parameters: {{ JSON.stringify(results[0].parameters) }}
         </div>
+        <div class="legends">
+            Legends: P for penalty, D for computed density factor, Norm_P for normalized penalty, C for count
+        </div>
         <ComparisonView :results="results" :dataPath="dataPath" />
     </div>
 </template>
@@ -50,11 +53,13 @@
         color: #2c3e50;
         margin-top: 20px;
     }
-    .timestamp, .parameters {
+    .timestamp, .parameters, .legends{
         text-align: left;
         font-size: 14px;
     }
     .parameters {
+    }
+    .legends {
         margin-bottom: 20px;
     }
 </style>
