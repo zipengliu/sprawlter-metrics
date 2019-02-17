@@ -17,13 +17,13 @@ DUMMY_LINE_SEGMENT = LineString([(0, 0), (0, 0)])
 # If the two ndoes overlap with each other, return a dummy line segment (that won't intersect with anything)
 # n1 and n2 is the node geometry (a circle / rectangle / polygon), n1coords and n2coords is the coordinates
 #   of centroid of the two nodes
-def chop_segment(n1, n2, n1coords, n2coords):
+def chop_segment(n1, n2):
     if n1.intersects(n2):
         return DUMMY_LINE_SEGMENT
 
-    assert(Point(n1coords).within(n1))
-    assert(Point(n2coords).within(n2))
-    full_line_segment = LineString([n1coords, n2coords])
+    c1 = n1.centroid
+    c2 = n2.centroid
+    full_line_segment = LineString([c1, c2])
     assert(n1.intersects(full_line_segment))
     assert(n2.intersects(full_line_segment))
 
@@ -62,9 +62,7 @@ def convert(input_path, leaf_only=False, bounding_shape='convex_hull'):
         if edge_id not in check_dup and src.id != tgt.id:
             edges.append({'id': e.id,
                           'ends': (src.id, tgt.id),
-                          'geometry': chop_segment(node_mapping[src.id]['geometry'], node_mapping[tgt.id]['geometry'],
-                                                   (view_layout[src].x(), view_layout[src].y()),
-                                                   (view_layout[tgt].x(), view_layout[tgt].y()))
+                          'geometry': chop_segment(node_mapping[src.id]['geometry'], node_mapping[tgt.id]['geometry'])
                           })
             check_dup[edge_id] = True
 
