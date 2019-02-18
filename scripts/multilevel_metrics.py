@@ -27,9 +27,7 @@ USE_LOG = False
 # m is the maximum possible overlap
 # Piecewise linear, slope = 1
 def piecewise_linear_func(x, m):
-    if x == 0:
-        return 0
-    elif x < (1 - ALPHA) * m:
+    if x < (1 - ALPHA) * m:
         return x + ALPHA * m
     else:
         return m
@@ -37,20 +35,19 @@ def piecewise_linear_func(x, m):
 
 # Linear, slope < 1
 def linear_func(x, m):
-    if x == 0:
-        return 0
-    else:
-        return (1 - ALPHA) * x + ALPHA * m
+    return (1 - ALPHA) * x + ALPHA * m
 
 
 # Log
 def log_func(x, m):
-    if x < EPSILON or m < EPSILON:
-        return 0
-    else:
-        # calculate the log coefficient because m can be different for different overlaps
-        c = (1 - ALPHA) * m / math.log(m + 1)
-        return c * math.log(x + 1) + ALPHA * m
+    # calculate the log coefficient because m can be different for different overlaps
+    c = (1 - ALPHA) * m / math.log(m + 1)
+    return c * math.log(x + 1) + ALPHA * m
+
+
+def area_power_func(x, m):
+    k = (1 - ALPHA) * math.pow(m, 0.3)
+    return k * math.pow(x, 0.7) + ALPHA * m
 
 
 # Penalty function for edge edge crossing
@@ -98,8 +95,12 @@ def timeit(func):
 
 class MultiLevelMetrics:
 
-    def __init__(self, json_path, penalty_func_type = 'piecewise-linear', angle_penalty_func_type = 'linear',
-                 hierarchical_weight_func_type = 'uniform', debug=False):
+    def __init__(self, json_path,
+                 area_penalty_func_type = 'power',
+                 length_penalty_func_type = 'linear',
+                 angle_penalty_func_type = 'linear',
+                 hierarchical_weight_func_type = 'none',
+                 debug=False):
         self.debug = debug
 
         # Import the coordinates of graph elements
@@ -118,19 +119,37 @@ class MultiLevelMetrics:
         # self.edges_isect = [tuple(list(e['geometry'].coords) + [e['id']]) for e in self.edges]
         self.edges_isect = [tuple(e['geometry'].coords) for e in self.edges]
 
-        if penalty_func_type == 'piecewise-linear':
-            self.penalty_func = piecewise_linear_func
-        elif penalty_func_type == 'linear':
-            self.penalty_func = linear_func
-        else:
+        if area_penalty_func_type == 'piecewise-linear':
+            self.area_penalty_func = piecewise_linear_func
+        elif area_penalty_func_type == 'linear':
+            self.area_penalty_func = linear_func
+        elif area_penalty_func_type == 'power':
+            self.area_penalty_func = area_power_func
+        elif area_penalty_func_type == 'log':
             self.penalty_func = log_func
+        else:
+            print('Area penalty function type not accepted!')
+            return
+
+        if length_penalty_func_type == 'piecewise-linear':
+            self.length_penalty_func = piecewise_linear_func
+        elif length_penalty_func_type == 'linear':
+            self.length_penalty_func = linear_func
+        elif length_penalty_func_type == 'log':
+            self.penalty_func = log_func
+        else:
+            print('Length penalty function type not accepted!')
+            return
 
         if angle_penalty_func_type == 'linear':
             self.angle_penalty_func = angle_linear_func
         elif angle_penalty_func_type == 'quadratic':
             self.angle_penalty_func = angle_quadratic_func
-        else:
+        elif angle_penalty_func_type == 'log':
             self.angle_penalty_func = angle_log_func
+        else:
+            print('Angle penalty function type not accepted!')
+            return
 
         # Get the height of the node hierarchy
         if hierarchical_weight_func_type == 'uniform':
@@ -179,7 +198,7 @@ class MultiLevelMetrics:
                 # Leaf edge (and degenerated metaedge)
                 o = isect.length
                 max_overlap = min(geom_e.length, v['diameter'])
-            p = self.penalty_func(o, max_overlap)
+            p = self.length_penalty_func(o, max_overlap)
             if self.debug:
                 if 'desc_metanodes' not in v:
                     node_str = 'node'
@@ -197,7 +216,7 @@ class MultiLevelMetrics:
         geom2 = v2['geometry']
         if geom1.intersects(geom2):
             isect = geom1.intersection(geom2)
-            p = self.penalty_func(isect.area, min(geom1.area, geom2.area))
+            p = self.area_penalty_func(isect.area, min(geom1.area, geom2.area))
             if self.debug:
                 print('(meta-)node {} overlaps with (meta-)node {} (overlap area: {}, penalty: {})'
                       .format(v1['id'], v2['id'], isect.area, p))
@@ -261,7 +280,7 @@ class MultiLevelMetrics:
                     if id2 != self.root and id1 < id2 and id2 not in mn1['desc_metanodes'] and id1 not in mn2['desc_metanodes']:
                         is_isect, p = self.get_node_node_penalty(mn1, mn2)
                         if is_isect:
-                            count += p > 0
+                            count += 1
                             # Assuming weight function takes the higher one in the hierarchy
                             lvl1 = mn1['level']
                             lvl2 = mn2['level']
@@ -566,5 +585,4 @@ if __name__ == '__main__':
     # run_store_print('../../data/coauthor', 'sfdp', penalty_func_type='linear', debug=True)
     # run_store_print('../../data/real-world-compiled/snap-main-comp', 'snap-email-eu-core-main-comp-grouseflocks-open-6',
     #                penalty_func_type='linear', debug=False)
-    run_store_print('../../data/real-world-compiled/grouseflocks', 'grouseflocks-ivOrigins-grouseflocks-open-4',
-                   penalty_func_type='linear', debug=False)
+    run_store_print('../../data/real-world-compiled/grouseflocks', 'grouseflocks-ivOrigins-grouseflocks-open-4', debug=False)
