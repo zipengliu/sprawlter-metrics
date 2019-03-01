@@ -15,36 +15,48 @@
             </template>
             <template slot="nn" slot-scope="data">
                 <div class="metrics">
-                    <div>P={{ fixedPrecision(data.item.nnPenalty) }}</div>
-                    <div>D={{ fixedPrecision(data.item.metrics.nn.density) }}</div>
-                    <div>Norm_P={{ fixedPrecision(data.item.metrics.nn.normalized_penalty) }}</div>
+                    <div>P={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.nn.penalty_by_level)) }}={{ fixedPrecision(data.item.nnPenalty) }}</div>
+                    <div class="count">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.nn.count_by_level)) }}={{ data.item.nnCount }}</div>
 
-                    <div class="count">C={{ data.item.nnCount }}</div>
+                    <div>S={{ fixedPrecision(1 / data.item.metrics.nn.density) }}</div>
+                    <div>normP={{ fixedPrecision(data.item.metrics.nn.normalized_penalty) }}</div>
+
+
+                    <div>P/C={{ pc_ratio(data.item.metrics, 'nn') }}</div>
+                    <div>normP/C={{ norm_pc_ratio(data.item.metrics, 'nn') }}</div>
                 </div>
             </template>
             <template slot="ne" slot-scope="data">
                 <div class="metrics">
-                    <div>P={{ fixedPrecision(data.item.nePenalty) }}</div>
-                    <div>D={{ fixedPrecision(data.item.metrics.ne.density) }}</div>
-                    <div>Norm_P={{ fixedPrecision(data.item.metrics.ne.normalized_penalty) }}</div>
+                    <div>P={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.ne.penalty_by_level)) }}={{ fixedPrecision(data.item.nePenalty) }}</div>
+                    <div class="count">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.ne.count_by_level)) }}={{ data.item.neCount }}</div>
 
-                    <div class="count">C={{ data.item.neCount }}</div>
+                    <div>S={{ fixedPrecision(1 / data.item.metrics.ne.density) }}</div>
+                    <div>normP={{ fixedPrecision(data.item.metrics.ne.normalized_penalty) }}</div>
+
+
+                    <div>P/C={{ pc_ratio(data.item.metrics, 'ne') }}</div>
+                    <div>normP/C={{ norm_pc_ratio(data.item.metrics, 'ne') }}</div>
                 </div>
             </template>
             <template slot="ee" slot-scope="data">
                 <div class="metrics">
                     <div>P={{ fixedPrecision(data.item.eePenalty) }}</div>
-                    <div>D={{ fixedPrecision(data.item.metrics.ee.density) }}</div>
-                    <div>Norm_P={{ fixedPrecision(data.item.metrics.ee.normalized_penalty) }}</div>
-
                     <div class="count">C={{ data.item.eeCount }}</div>
+
+                    <div>S={{ fixedPrecision(1 / data.item.metrics.ee.density) }}</div>
+                    <div>normP={{ fixedPrecision(data.item.metrics.ee.normalized_penalty) }}</div>
+
+                    <div>P/C={{ pc_ratio(data.item.metrics, 'ee') }}</div>
+                    <div>normP/C={{ norm_pc_ratio(data.item.metrics, 'ee') }}</div>
+                    <div class="highlight">avr angle={{ average_angle(data.item.metrics) }}</div>
                 </div>
             </template>
-            <temmplate slot="area" slot-scope="data">
+            <template slot="area" slot-scope="data">
                 <div class="metrics">
                     <div>{{ fixedPrecision(data.item.area) }}</div>
                 </div>
-            </temmplate>
+            </template>
             <template slot="executionTime" slot-scope="data">
                 {{ fixedPrecision(data.item.nnTime, 0, false) }} +
                 {{ fixedPrecision(data.item.neTime, 0, false) }} +
@@ -56,6 +68,8 @@
 </template>
 
 <script>
+    import numeral from 'numeral';
+
     export default {
         name: 'ComparisonView',
         props: ['results', 'dataPath'],
@@ -65,7 +79,7 @@
                 {key: 'image', label: 'Image'},
                 // {key: 'numberOfNodes', label: '#Nodes'},
                 // {key: 'numberOfEdges', label: '#Edges'},
-                // {key: 'graph-property', label: '#Nodes</br>#Edge'}       // TODO
+                // {key: 'graph-property', label: '#Nodes</br>#Edge'}
                 {key: 'nn', label: 'Node-node'},
                 {key: 'ne', label: 'Node-edge'},
                 {key: 'ee', label: 'Edge-edge'},
@@ -104,7 +118,34 @@
             }
         },
         methods: {
-            fixedPrecision: (v, p=0, force=true) => force && v < 10^(-p)? v.toFixed(2): v.toFixed(p),
+            // fixedPrecision: (v, p=0, force=true) => force && v < 10^(-p)? v.toFixed(2): v.toFixed(p),
+            fixedPrecision: (v, p=0, force=true) => force && v < 10^(-p)? numeral(v).format('0,0.00'): numeral(v).format('0,0'),
+            pc_ratio: (d, which) => d[which].total_count == 0? 'NA':
+                numeral(d[which].total_penalty / d[which].total_count, 2).format('0.00'),
+            norm_pc_ratio: (d, which) => d[which].total_count == 0? 'NA':
+                numeral(d[which].normalized_penalty / d[which].total_count, 2).format('0.00'),
+            pc_diff: (d, which) => numeral(d[which].total_penalty - d[which].total_count, 2).format('0.00'),
+
+            average_angle: (d) => d.ee.total_count == 0? 'NA':
+                numeral(90 - (d.ee.total_penalty / d.ee.total_count - 1) * 180 / Math.PI).format('0.00'),
+
+            // Calculate a breakdown of counts or penalties by metanode and leaf node
+            // The row 0 and column 0 are the root level, exclude it because it is always zero
+            breakdown_by_level: (t) => {
+                let sum = 0;
+                for (let i = 0; i < t.length; i++) {
+                    for (let j = 0; j < t[i].length; j++) {
+                        if (t[i][j] !== 'NA') {
+                            sum += t[i][j];
+                        }
+                    }
+                }
+                return [sum - t[t.length - 1][t.length - 1], t[t.length - 1][t.length - 1]];
+            },
+            count_levels_repr: (breakdown) => breakdown.join('+'),
+            penalty_levels_repr: (breakdown) => breakdown.map(v => numeral(v).format('0,0')).join('+'),
+
+
         }
     }
 
@@ -124,5 +165,11 @@
     }
     .metrics .count {
         margin-top: 10px;
+        margin-bottom: 10px;
+    }
+    .highlight {
+        font-weight: bold;
+        color: white;
+        background: #000;
     }
 </style>

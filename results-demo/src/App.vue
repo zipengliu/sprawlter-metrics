@@ -6,11 +6,11 @@
         <div class="timestamp" v-if="timestamp">
             Time: {{ timestamp.toString() }}
         </div>
-        <div class="parameters" v-if="results && results[0].parameters">
+        <div class="parameters" v-if="results.length && results[0].parameters">
             Parameters: {{ JSON.stringify(results[0].parameters) }}
         </div>
         <div class="legends">
-            Legends: P for penalty, D for computed density factor, Norm_P for normalized penalty, C for count
+            Legends: P for penalty, S for sprawl ratio, normP for normalized penalty, C for count.  P and C are broken down by metanode + leafnode.
         </div>
         <ComparisonView :results="results" :dataPath="dataPath" />
     </div>
