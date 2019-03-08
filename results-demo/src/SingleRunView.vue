@@ -6,13 +6,13 @@
         <div class="timestamp" v-if="timestamp">
             Time: {{ timestamp.toString() }}
         </div>
-        <div class="parameters" v-if="results.length && results[0].parameters">
-            Parameters: {{ JSON.stringify(results[0].parameters) }}
+        <div class="parameters" v-if="parameters">
+            Parameters: {{ JSON.stringify(parameters) }}
         </div>
         <div class="legends">
             Legends: P for penalty, S for sprawl ratio, normP for normalized penalty, C for count.  P and C are broken down by metanode + leafnode.
         </div>
-        <ComparisonView :results="results" :dataPath="dataPath" />
+        <ComparisonView :results="results" :dataPath="dataPath" :parameters="parameters" />
     </div>
 </template>
 
@@ -25,7 +25,7 @@
         components: {
             ComparisonView
         },
-        data: () => ({results: [], dataPath: null, timestamp: null}),
+        data: () => ({results: [], dataPath: null, timestamp: null, parameters: null}),
         mounted() {
             let dataPath = `/data${window.location.pathname}`;
             axios.get(`${dataPath}/graphs.txt`).then(response => {
@@ -36,6 +36,7 @@
                         this.results = responses.map(r => r.data);
                         this.dataPath = dataPath;
                         this.timestamp = new Date(this.results[this.results.length - 1].end_time * 1000);
+                        this.parameters = this.results[0].parameters;
                         this.graphNames = graphNames;
                     })
             })

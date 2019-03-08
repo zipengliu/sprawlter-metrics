@@ -8,93 +8,40 @@ import json
 import os
 from time import process_time as timer
 from time import time as wall_time
-from poly_point_isect import isect_segments_include_segments, isect_segments__naive, isect_seg_seg_v2_point
+from poly_point_isect import isect_segments_include_segments
 
-
-ALPHA = 0.2
-
-BETA_POWER = (1 - 1 / (0.5 ** 0.7)) * ALPHA + 1 / (0.5 ** 0.7)
-POWER_COEFFICIENT = BETA_POWER - ALPHA
-
-BETA_LINEAR = 2 - ALPHA
-LINEAR_COEFFICIENT = BETA_LINEAR - ALPHA
-
-BETA_LINEAR_ANGLE = 4 / math.pi - ALPHA
-LINEAR_COEFFICIENT_ANGLE = BETA_LINEAR_ANGLE - ALPHA
-
-BETA_QUAD_ANGLE = 8 / math.pi - 3 * ALPHA
-QUAD_COEFFICIENT_ANGLE = (BETA_QUAD_ANGLE - ALPHA) / math.pi * 2
-
-# GLANCING_ANGLE_PENALTY = 5
-# These coefficients for edge-edge penalty are fixed because the GLANCING_ANGLE_PENALTY (m) is fixed
-# ANGLE_QUAD_COEFFICIENT = 4 * (1 - ALPHA) * GLANCING_ANGLE_PENALTY / (math.pi * math.pi)
-# ANGLE_QUAD_CONSTANT = 1 + math.pi * math.pi / 4
-# ANGLE_LINEAR_CONSTANT = 1 + math.pi / 2
-# ANGLE_LOG_COEFFICIENT = (1 - ALPHA) * GLANCING_ANGLE_PENALTY / math.log(math.pi / 2 + 1)
-
-LINEAR_DECAY_RATE = -0.1
-EXPONENTIAL_DECAY_RATE = 0.5
 
 USE_LOG = False
 
 
-# penalty function of overlap area
-# m is the maximum possible overlap
-# Piecewise linear, slope = 1
-def piecewise_linear_func(x, m):
-    if x < (1 - ALPHA) * m:
-        return x + ALPHA * m
-    else:
-        return m
+def get_linear_func(alpha):
+    beta = 2 - alpha
+    k = beta - alpha
+    print('beta for linear function: {:.2f}  coefficient for linear function: {:.2f}'.format(beta, k))
+    return lambda x, m: k * x + alpha * m
 
 
-# Linear, slope < 1
-def linear_func(x, m):
-    return LINEAR_COEFFICIENT * x + ALPHA * m
-
-
-def linear_func_global(x):
-    return x + ALPHA;
-
-
-# Log
-def log_func(x, m):
-    # calculate the log coefficient because m can be different for different overlaps
-    c = (1 - ALPHA) * m / math.log(m + 1)
-    return c * math.log(x + 1) + ALPHA * m
-
-
-def area_power_func(x, m):
-    return POWER_COEFFICIENT * math.pow(x, 0.7) + ALPHA * math.pow(m, 0.7)
+def get_area_power_func(alpha):
+    beta = (1 - 1 / (0.5 ** 0.7)) * alpha + 1 / (0.5 ** 0.7)
+    k = beta - alpha
+    print('beta for power function: {:.2f}  coefficient for power function: {:.2f}'.format(beta, k))
+    return lambda x, m: k * math.pow(x, 0.7) + alpha* math.pow(m, 0.7)
 
 
 # Penalty function for edge edge crossing
 # Linear.  x the **complementary** crossing angle is [0, PI / 2]
-def angle_linear_func(x):
-    return LINEAR_COEFFICIENT_ANGLE * x + ALPHA * math.pi / 2
+def get_angle_linear_func(alpha):
+    beta = 4 / math.pi - alpha
+    k = beta - alpha
+    print('beta for linear angle function: {:.2f}  coefficient for linear angle function: {:.2f}'.format(beta, k))
+    return lambda x: k * x + alpha * math.pi / 2
 
 
-def angle_quadratic_func(x):
-    return QUAD_COEFFICIENT_ANGLE * math.pow(x, 2) + ALPHA * math.pi / 2
-
-
-# Log function
-# def angle_log_func(x, m = GLANCING_ANGLE_PENALTY):
-#     return ANGLE_LOG_COEFFICIENT * math.log(math.pi / 2 + 1 - x) + ALPHA * m
-
-
-def get_uniform_weight_func(h):
-    return lambda i: 1 / h
-
-
-def get_exponential_decay_func(a, h):
-    coefficient = (1 - a) / (1 - a ** h)
-    return lambda i: coefficient * a ** i
-
-
-def get_linear_decay_func(k, h):
-    b = 1 / h - (h - 1) / 2 * k
-    return lambda i: k * i + b
+def get_angle_quadratic_func(alpha):
+    beta = 16 / (math.pi ** 2) - 3 * alpha
+    k = beta - alpha
+    print('beta for quadratic angle function: {:.2f}  coefficient for quadratic angle function: {:.2f}'.format(beta, k))
+    return lambda x: k * math.pow(x, 2) + alpha * math.pi / 2
 
 
 # a decorator for performance timing
@@ -112,14 +59,24 @@ def timeit(func):
 class MultiLevelMetrics:
 
     def __init__(self, json_path,
-                 area_penalty_func_type = 'power',
-                 length_penalty_func_type = 'linear',
-                 angle_penalty_func_type = 'linear',
-                 hierarchical_weight_func_type = 'none',
-                 skip_ee_computation = False,
+                 alpha_nn=0.2,
+                 alpha_ne=0.2,
+                 alpha_ee=0.2,
+                 area_penalty_func_type='power',            # deprecated
+                 length_penalty_func_type='linear',         # deprecated
+                 angle_penalty_func_type='quadratic',
+                 skip_nn_computation=False,
+                 skip_ne_computation=False,
+                 skip_ee_computation=False,
+                 skip_AS_metrics=False,
+                 skip_level_breakdown=False,
                  debug=False):
         self.debug = debug
+        self.skip_nn_computation = skip_nn_computation
+        self.skip_ne_computation = skip_ne_computation
         self.skip_ee_computation = skip_ee_computation
+        self.skip_AS_metrics = skip_AS_metrics
+        self.skip_level_breakdown = skip_level_breakdown
 
         # Import the coordinates of graph elements
         json_data = json.load(open(json_path))
@@ -133,57 +90,29 @@ class MultiLevelMetrics:
         for k, v in json_data.items():
             setattr(self, k, v)
 
+        # Node and edge normalization
         self.total_node_size = self.get_total_node_size()
         self.total_edge_length = self.get_total_edge_length()
         self.total_area = self.get_total_area()
         self.min_node_size = self.normalize_node_size()
         self.min_edge_length = self.normalize_edge_length()
 
+        # For the Bentley-Ottmann implementation
         # Convert to format that is friendly to isect implementation
         # self.edges_isect = [tuple(list(e['geometry'].coords) + [e['id']]) for e in self.edges]
-        self.edges_isect = [tuple(e['geometry'].coords) for e in self.edges]
+        # self.edges_isect = [tuple(e['geometry'].coords) for e in self.edges]
 
-        if area_penalty_func_type == 'piecewise-linear':
-            self.area_penalty_func = piecewise_linear_func
-        elif area_penalty_func_type == 'linear':
-            self.area_penalty_func = linear_func
-        elif area_penalty_func_type == 'power':
-            self.area_penalty_func = area_power_func
-        elif area_penalty_func_type == 'log':
-            self.penalty_func = log_func
-        else:
-            print('Area penalty function type not accepted!')
-            return
-
-        if length_penalty_func_type == 'piecewise-linear':
-            self.length_penalty_func = piecewise_linear_func
-        elif length_penalty_func_type == 'linear':
-            self.length_penalty_func = linear_func
-        elif length_penalty_func_type == 'log':
-            self.penalty_func = log_func
-        else:
-            print('Length penalty function type not accepted!')
-            return
+        print('Alpha (NN) = {:.2f}  Alpha (NE) = {:.2f} Alpha (EE) = {:.2f}'.format(alpha_nn, alpha_ne, alpha_ee))
+        self.area_penalty_func = get_area_power_func(alpha_nn)
+        self.length_penalty_func = get_linear_func(alpha_ne)
 
         if angle_penalty_func_type == 'linear':
-            self.angle_penalty_func = angle_linear_func
+            self.angle_penalty_func = get_angle_linear_func(alpha_ee)
         elif angle_penalty_func_type == 'quadratic':
-            self.angle_penalty_func = angle_quadratic_func
-        # elif angle_penalty_func_type == 'log':
-        #     self.angle_penalty_func = angle_log_func
+            self.angle_penalty_func = get_angle_quadratic_func(alpha_ee)
         else:
             print('Angle penalty function type not accepted!')
             return
-
-        # Get the height of the node hierarchy
-        if hierarchical_weight_func_type == 'uniform':
-            self.weight_func = get_uniform_weight_func(self.height)
-        elif hierarchical_weight_func_type == 'linear':
-            self.weight_func = get_linear_decay_func(LINEAR_DECAY_RATE, self.height)
-        elif hierarchical_weight_func_type == 'none':
-            self.weight_func = lambda x: 1
-        else:
-            self.weight_func = get_exponential_decay_func(EXPONENTIAL_DECAY_RATE, self.height)
 
     # Normalize the node size by dividing by the smallest node size
     def normalize_node_size(self):
@@ -249,6 +178,8 @@ class MultiLevelMetrics:
         geom_v = v['geometry']
         geom_e = e['geometry']
         if geom_v.intersects(geom_e):
+            if self.skip_AS_metrics:
+                return True, 0
             isect = geom_v.intersection(geom_e)
             normalized_overlap = isect.length / self.min_edge_length
             max_overlap = min(e['normalized_length'], v['normalized_diameter'])
@@ -257,15 +188,17 @@ class MultiLevelMetrics:
                 print('{} {} overlaps with edge {} (overlap: {}, normalized overlap: {} penalty: {})'
                       .format('leaf-node' if 'desc_metanodes' not in v else 'meta-node',
                               v['id'], e['id'], isect.length, normalized_overlap, p))
-            return True, p
+            return True, p, normalized_overlap
         else:
-            return False, 0
+            return False, 0, 0
 
     # Get the penalty for overlap between two (meta-)nodes v1 and v2, given that nodes are represented as circles
     def get_node_node_penalty(self, v1, v2):
         geom1 = v1['geometry']
         geom2 = v2['geometry']
         if geom1.intersects(geom2):
+            if self.skip_AS_metrics:
+                return True, 0
             isect = geom1.intersection(geom2)
             norm_isect_area = isect.area / self.min_node_size
             p = self.area_penalty_func(norm_isect_area, min(v1['normalized_size'], v2['normalized_size']))
@@ -274,9 +207,9 @@ class MultiLevelMetrics:
                       .format('leaf-node' if 'desc_metanodes' not in v1 else 'meta-node', v1['id'],
                               'leaf-node' if 'desc_metanodes' not in v2 else 'meta-node', v2['id'],
                               isect.area, norm_isect_area, p))
-            return True, p
+            return True, p, norm_isect_area
         else:
-            return False, 0
+            return False, 0, 0
 
     # Get the penalty for edge intersection
     def get_edge_edge_penalty(self, e1, e2):
@@ -288,6 +221,8 @@ class MultiLevelMetrics:
         #     return False, 0
 
         if geom1.intersects(geom2):
+            if self.skip_AS_metrics:
+                return True, 0
             angle = get_angle_between_line_segments(geom1, geom2)
             # use the complementary of crossing angle!
             p = self.angle_penalty_func(math.pi / 2 - angle)
@@ -295,49 +230,54 @@ class MultiLevelMetrics:
             if self.debug:
                 print('Edge {} intersects with edge {}: angle {} (deg) penalty {}'
                       .format(e1['id'], e2['id'], angle * 180 / math.pi, p))
-            return True, p
+            return True, p, angle
         else:
-            return False, 0
+            return False, 0, 0
 
     # Get the overall node-node penalty and count for the whole graph
     @timeit
     def get_graph_node_node_penalty(self):
         penalty = 0
         count = 0
+        total_overlap = 0
         penalty_lvl = self.get_initial_level_table(True, True)
         count_lvl = self.get_initial_level_table(True, True)
 
-        for i, n1 in enumerate(self.leaf_nodes):
-            # leaf node x leaf node
-            for j in range(i + 1, len(self.leaf_nodes)):       # Make sure no duplicate pairs of nodes are considered
-                n2 = self.leaf_nodes[j]
-                is_isect, p = self.get_node_node_penalty(n1, n2)
-                if is_isect:
-                    count += 1
-                    penalty += self.weight_func(self.height - 1) * p
-                    count_lvl[-1][-1] += 1
-                    penalty_lvl[-1][-1] += p
+        if not self.skip_nn_computation:
+            for i, n1 in enumerate(self.leaf_nodes):
+                # leaf node x leaf node
+                for j in range(i + 1, len(self.leaf_nodes)):       # Make sure no duplicate pairs of nodes are considered
+                    n2 = self.leaf_nodes[j]
+                    is_isect, p, o = self.get_node_node_penalty(n1, n2)
+                    if is_isect:
+                        count += 1
+                        penalty += p
+                        total_overlap += o
+                        if not self.skip_level_breakdown:
+                            count_lvl[-1][-1] += 1
+                            penalty_lvl[-1][-1] += p
 
-        for id1, mn1 in self.metanodes.items():
-            if id1 != self.root:
-                for id2, mn2 in self.metanodes.items():
-                    if id2 != self.root and id1 < id2 and id2 not in mn1['desc_metanodes'] and id1 not in mn2['desc_metanodes']:
-                        is_isect, p = self.get_node_node_penalty(mn1, mn2)
-                        if is_isect:
-                            count += 1
-                            # Assuming weight function takes the higher one in the hierarchy
-                            lvl1 = mn1['level']
-                            lvl2 = mn2['level']
-                            min_lvl = min(lvl1, lvl2)
-                            max_lvl = max(lvl1, lvl2)
-                            penalty += self.weight_func(min_lvl) * p
-                            # Fill the upper-right triangle of the counting table
-                            count_lvl[min_lvl][max_lvl] += 1
-                            penalty_lvl[min_lvl][max_lvl] += p
+            for id1, mn1 in self.metanodes.items():
+                if id1 != self.root:
+                    for id2, mn2 in self.metanodes.items():
+                        if id2 != self.root and id1 < id2 and id2 not in mn1['desc_metanodes'] and id1 not in mn2['desc_metanodes']:
+                            is_isect, p, o = self.get_node_node_penalty(mn1, mn2)
+                            if is_isect:
+                                count += 1
+                                penalty += p
+                                total_overlap += o
+                                if not self.skip_level_breakdown:
+                                    lvl1 = mn1['level']
+                                    lvl2 = mn2['level']
+                                    min_lvl = min(lvl1, lvl2)
+                                    max_lvl = max(lvl1, lvl2)
+                                    # Fill the upper-right triangle of the counting table
+                                    count_lvl[min_lvl][max_lvl] += 1
+                                    penalty_lvl[min_lvl][max_lvl] += p
 
         sprawl = self.total_area / self.total_node_size
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
-                'total_count': count, 'count_by_level': count_lvl,
+                'total_count': count, 'count_by_level': count_lvl, 'total_overlap': total_overlap,
                 'sprawl': sprawl,
                 'normalized_penalty': penalty * sprawl
                 }
@@ -346,41 +286,44 @@ class MultiLevelMetrics:
     def get_graph_node_edge_penalty(self):
         penalty = 0
         count = 0
+        total_overlap = 0
         # Row is node level, column is edge level
         penalty_lvl = self.get_initial_level_table(False, False)
         count_lvl = self.get_initial_level_table(False, False)
 
-        # between leaf edge and leaf node
-        for e in self.edges:
-            s, t = e['ends']
-            if s != t:
-                for node in self.leaf_nodes:
-                    if node['id'] != s and node['id'] != t:
-                        is_isect, p = self.get_node_edge_penalty(e, node)
-                        if is_isect:
-                            count += 1
-                            penalty += self.weight_func(self.height - 1) * p
-                            count_lvl[-1][-1] += 1
-                            penalty_lvl[-1][-1] += p
+        if not self.skip_ne_computation:
+            # between leaf edge and leaf node
+            for e in self.edges:
+                s, t = e['ends']
+                if s != t:
+                    for node in self.leaf_nodes:
+                        if node['id'] != s and node['id'] != t:
+                            is_isect, p, o = self.get_node_edge_penalty(e, node)
+                            if is_isect:
+                                count += 1
+                                penalty += p
+                                total_overlap += o
+                                if not self.skip_level_breakdown:
+                                    count_lvl[-1][-1] += 1
+                                    penalty_lvl[-1][-1] += p
 
-                # the keys in mn['leaf_nodes'] are strings, but s and t are integers
-                s_str = str(s)
-                t_str = str(t)
-                for metanode_id, mn in self.metanodes.items():
-                    if int(metanode_id) != self.root and s_str not in mn['leaf_nodes'] and t_str not in mn['leaf_nodes']:
-                        is_isect, p = self.get_node_edge_penalty(e, mn)
-                        if is_isect:
-                            count += 1
-                            # penalty += self.weight_func(min(mn['level'], e['level'])) * p
-                            # count_lvl[mn['level']][e['level']] += 1
-                            # penalty_lvl[mn['level']][e['level']] += p
-                            penalty += self.weight_func(mn['level']) * p
-                            count_lvl[mn['level']][-1] += 1
-                            penalty_lvl[mn['level']][-1] += p
+                    # the keys in mn['leaf_nodes'] are strings, but s and t are integers
+                    s_str = str(s)
+                    t_str = str(t)
+                    for metanode_id, mn in self.metanodes.items():
+                        if int(metanode_id) != self.root and s_str not in mn['leaf_nodes'] and t_str not in mn['leaf_nodes']:
+                            is_isect, p, o = self.get_node_edge_penalty(e, mn)
+                            if is_isect:
+                                count += 1
+                                penalty += p
+                                total_overlap += o
+                                if not self.skip_level_breakdown:
+                                    count_lvl[mn['level']][-1] += 1
+                                    penalty_lvl[mn['level']][-1] += p
 
         sprawl = self.total_area / self.total_edge_length
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
-                'total_count': count, 'count_by_level': count_lvl,
+                'total_count': count, 'count_by_level': count_lvl, 'total_overlap': total_overlap,
                 'sprawl': sprawl,
                 'normalized_penalty': penalty * sprawl
                 }
@@ -460,6 +403,7 @@ class MultiLevelMetrics:
     def get_graph_edge_edge_penalty_naive(self):
         penalty = 0
         count = 0
+        total_overlap = 0
         # crossings = []
 
         if not self.skip_ee_computation:
@@ -472,15 +416,17 @@ class MultiLevelMetrics:
                         if e2['ends'][0] != e2['ends'][1]:
                             # Make sure e1 and e2 do not connect the same node and they are not self connecting edges
                             if s not in e2['ends'] and t not in e2['ends']:
-                                is_intersect, p = self.get_edge_edge_penalty(e1, e2)
+                                is_intersect, p, o = self.get_edge_edge_penalty(e1, e2)
                                 if is_intersect:
                                     # crossings.append((e1['id'], e2['id']))
                                     count += 1
                                     penalty += p
+                                    total_overlap += o
             # if USE_LOG:
             #     json.dump(crossings, open('test_mine.json', 'w'))
         sprawl = self.total_area / len(self.edges)
         return {'total_penalty': penalty, 'total_count': count, 'sprawl': sprawl,
+                'total_overlap': total_overlap,
                 'normalized_penalty': penalty * sprawl}
 
     def get_total_node_size(self):
@@ -528,10 +474,13 @@ def print_by_level(p, c, is_symmetric):
     print()
 
 
-def run_store_print(file_dir, filename, **metrics_args):
+def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     data_path = os.path.join(file_dir, filename + '.json')
     # image_path = os.path.join(file_dir, filename + '.png')
-    json_path = os.path.join(file_dir, filename + '_result.json')
+    if output_dir is None:
+        json_path = os.path.join(file_dir, filename + '_result.json')
+    else:
+        json_path = os.path.join(output_dir, filename + '_result.json')
 
     metrics = MultiLevelMetrics(data_path, **metrics_args)
     number_of_metanodes = len(metrics.metanodes.keys())
@@ -558,10 +507,7 @@ def run_store_print(file_dir, filename, **metrics_args):
         },
         'start_time': wall_time(),
         'metrics': {},
-        'parameters': {
-            'alpha': ALPHA,
-            # 'glancingAnglePenalty': GLANCING_ANGLE_PENALTY,
-        },
+        'parameters': {},
         # This one is telling the frontend whether the results are using density or sprawl (old versions use density)
         # Eventually remove this switch before submission  TODO
         'use_sprawl': True,
@@ -606,4 +552,11 @@ def run_store_print(file_dir, filename, **metrics_args):
 
 
 if __name__ == '__main__':
-    run_store_print('../../data/four-clusters', 'nn5', debug=False)
+    run_store_print('../../data/ALL', 'grouseflocks-moviedb-rateonly-grouseflocks-1',
+                    angle_penalty_func_type='linear',
+                    alpha_nn=0.2, alpha_ne=0.2, alpha_ee=0.2,
+                    skip_nn_computation=False,
+                    skip_ne_computation=False,
+                    skip_ee_computation=False,
+                    skip_AS_metrics=False, skip_level_breakdown=False,
+                    debug=True)

@@ -4,11 +4,10 @@ if [[ $# -eq 0 ]] ; then
 fi
 
 results_dir=../results-demo/public/data/$1
-src_dir=../../data/ALL-2
+src_dir=../../data/ALL-3
 
 if [ ! -d $results_dir ]; then
     mkdir $results_dir
-    touch $results_dir/comments.txt
 fi
 
 echo $results_dir
