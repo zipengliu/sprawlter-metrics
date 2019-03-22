@@ -25,7 +25,7 @@ def get_area_power_func(alpha):
     beta = (1 - 1 / (0.5 ** 0.7)) * alpha + 1 / (0.5 ** 0.7)
     k = beta - alpha
     print('beta for power function: {:.2f}  coefficient for power function: {:.2f}'.format(beta, k))
-    return lambda x, m: k * math.pow(x, 0.7) + alpha* math.pow(m, 0.7)
+    return lambda x, m: k * math.pow(x, 0.7) + alpha * math.pow(m, 0.7)
 
 
 # Penalty function for edge edge crossing
@@ -41,7 +41,7 @@ def get_angle_quadratic_func(alpha):
     beta = 16 / (math.pi ** 2) - 3 * alpha
     k = beta - alpha
     print('beta for quadratic angle function: {:.2f}  coefficient for quadratic angle function: {:.2f}'.format(beta, k))
-    return lambda x: k * math.pow(x, 2) + alpha * math.pi / 2
+    return lambda x: k * math.pow(x, 2) + alpha * math.pow(math.pi, 2) / 4
 
 
 # a decorator for performance timing
@@ -179,7 +179,7 @@ class MultiLevelMetrics:
         geom_e = e['geometry']
         if geom_v.intersects(geom_e):
             if self.skip_AS_metrics:
-                return True, 0
+                return True, 0, 0
             isect = geom_v.intersection(geom_e)
             normalized_overlap = isect.length / self.min_edge_length
             max_overlap = min(e['normalized_length'], v['normalized_diameter'])
@@ -198,7 +198,7 @@ class MultiLevelMetrics:
         geom2 = v2['geometry']
         if geom1.intersects(geom2):
             if self.skip_AS_metrics:
-                return True, 0
+                return True, 0, 0
             isect = geom1.intersection(geom2)
             norm_isect_area = isect.area / self.min_node_size
             p = self.area_penalty_func(norm_isect_area, min(v1['normalized_size'], v2['normalized_size']))
@@ -222,7 +222,7 @@ class MultiLevelMetrics:
 
         if geom1.intersects(geom2):
             if self.skip_AS_metrics:
-                return True, 0
+                return True, 0, 0
             angle = get_angle_between_line_segments(geom1, geom2)
             # use the complementary of crossing angle!
             p = self.angle_penalty_func(math.pi / 2 - angle)
@@ -552,8 +552,8 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
 
 
 if __name__ == '__main__':
-    run_store_print('../../data/ALL', 'grouseflocks-moviedb-rateonly-grouseflocks-1',
-                    angle_penalty_func_type='linear',
+    run_store_print('../../data/four-clusters', 'nn5',
+                    angle_penalty_func_type='quadratic',
                     alpha_nn=0.2, alpha_ne=0.2, alpha_ee=0.2,
                     skip_nn_computation=False,
                     skip_ne_computation=False,
