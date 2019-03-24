@@ -1,6 +1,6 @@
 <template>
     <div>
-        <b-table hover :items="items" :fields="fields">
+        <b-table :items="items" :fields="fields">
             <template slot="name" slot-scope="data">
                 <div class="graph-property">{{ data.item.name }}</div>
                 <div class="graph-property">
@@ -15,23 +15,26 @@
             </template>
             <template slot="nn" slot-scope="data">
                 <div class="metrics">
-                    <div>P={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.nn.penalty_by_level)) }}={{ fixedPrecision(data.item.nnPenalty) }}</div>
-                    <div class="count">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.nn.count_by_level)) }}={{ data.item.nnCount }}</div>
+                    <div class="highlight">P={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.nn.penalty_by_level)) }}={{ fixedPrecision(data.item.nnPenalty) }}</div>
+                    <div class="count highlight">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.nn.count_by_level)) }}={{ data.item.nnCount }}</div>
 
-                    <div>S={{ fixedPrecision(1 / data.item.metrics.nn.density) }}</div>
+                    <div>S={{ fixedPrecision(data.item.metrics.nn.sprawl) }}</div>
                     <div>normP={{ fixedPrecision(data.item.metrics.nn.normalized_penalty) }}</div>
-
 
                     <div>P/C={{ pc_ratio(data.item.metrics, 'nn') }}</div>
                     <div>normP/C={{ norm_pc_ratio(data.item.metrics, 'nn') }}</div>
+
+                    <div v-if="data.item.metrics.nn.hasOwnProperty('dunne_ratio')" class="dunne">
+                        Dunne's ratio={{ fixedPrecision(data.item.metrics.nn.dunne_ratio, 2, true) }}
+                    </div>
                 </div>
             </template>
             <template slot="ne" slot-scope="data">
                 <div class="metrics">
-                    <div>P={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.ne.penalty_by_level)) }}={{ fixedPrecision(data.item.nePenalty) }}</div>
-                    <div class="count">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.ne.count_by_level)) }}={{ data.item.neCount }}</div>
+                    <div class="highlight">P={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.ne.penalty_by_level)) }}={{ fixedPrecision(data.item.nePenalty) }}</div>
+                    <div class="count highlight">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.ne.count_by_level)) }}={{ data.item.neCount }}</div>
 
-                    <div>S={{ fixedPrecision(1 / data.item.metrics.ne.density) }}</div>
+                    <div>S={{ fixedPrecision(data.item.metrics.ne.sprawl) }}</div>
                     <div>normP={{ fixedPrecision(data.item.metrics.ne.normalized_penalty) }}</div>
 
 
@@ -41,15 +44,19 @@
             </template>
             <template slot="ee" slot-scope="data">
                 <div class="metrics">
-                    <div>P={{ fixedPrecision(data.item.eePenalty) }}</div>
-                    <div class="count">C={{ data.item.eeCount }}</div>
+                    <div class="highlight">P={{ fixedPrecision(data.item.eePenalty) }}</div>
+                    <div class="count highlight">C={{ data.item.eeCount }}</div>
 
-                    <div>S={{ fixedPrecision(1 / data.item.metrics.ee.density) }}</div>
+                    <div>S={{ fixedPrecision(data.item.metrics.ee.sprawl) }}</div>
                     <div>normP={{ fixedPrecision(data.item.metrics.ee.normalized_penalty) }}</div>
 
                     <div>P/C={{ pc_ratio(data.item.metrics, 'ee') }}</div>
                     <div>normP/C={{ norm_pc_ratio(data.item.metrics, 'ee') }}</div>
-                    <div class="highlight">avr angle={{ average_angle(data.item.metrics) }}</div>
+                    <div v-if="data.item.avrAngle !== 'NA'">avr angle={{ data.item.avrAngle }}</div>
+
+                    <div v-if="data.item.metrics.ee.hasOwnProperty('dunne_ratio')" class="dunne">
+                        Dunne's ratio={{ fixedPrecision(data.item.metrics.ee.dunne_ratio, 2, true) }}
+                    </div>
                 </div>
             </template>
             <template slot="area" slot-scope="data">
@@ -72,7 +79,7 @@
 
     export default {
         name: 'ComparisonView',
-        props: ['results', 'dataPath'],
+        props: ['results', 'dataPath', 'parameters'],
         data: () => ({
             fields: [
                 {key: 'name', label: 'Graph'},
@@ -95,6 +102,8 @@
         }),
         computed: {
             items: function() {
+                let _this = this;
+                console.log(this.parameters);
                 return this.results.map(r => ({
                     name: r.tlpFile.replace('.tlp', ''),
                     numberOfNodes: r.graph.numberOfNodes,
@@ -114,20 +123,18 @@
                     neTime: r.metrics.ne.execution_time,
                     eeTime: r.metrics.ee.execution_time,
                     totTime: r.metrics.nn.execution_time + r.metrics.ne.execution_time + r.metrics.ee.execution_time,
+                    avrAngle: r.metrics.ee.total_count == 0? 'NA':
+                        numeral(180 / Math.PI * (r.metrics.ee.total_overlap / r.metrics.ee.total_count)).format('0.00')
                 }));
             }
         },
         methods: {
             // fixedPrecision: (v, p=0, force=true) => force && v < 10^(-p)? v.toFixed(2): v.toFixed(p),
-            fixedPrecision: (v, p=0, force=true) => force && v < 10^(-p)? numeral(v).format('0,0.00'): numeral(v).format('0,0'),
+            fixedPrecision: (v, p=2, force=true) => force && v < 10^(-p)? numeral(v).format('0,0.00'): numeral(v).format('0,0'),
             pc_ratio: (d, which) => d[which].total_count == 0? 'NA':
                 numeral(d[which].total_penalty / d[which].total_count, 2).format('0.00'),
             norm_pc_ratio: (d, which) => d[which].total_count == 0? 'NA':
                 numeral(d[which].normalized_penalty / d[which].total_count, 2).format('0.00'),
-            pc_diff: (d, which) => numeral(d[which].total_penalty - d[which].total_count, 2).format('0.00'),
-
-            average_angle: (d) => d.ee.total_count == 0? 'NA':
-                numeral(90 - (d.ee.total_penalty / d.ee.total_count - 1) * 180 / Math.PI).format('0.00'),
 
             // Calculate a breakdown of counts or penalties by metanode and leaf node
             // The row 0 and column 0 are the root level, exclude it because it is always zero
@@ -171,5 +178,8 @@
         font-weight: bold;
         color: white;
         background: #000;
+    }
+    .metrics .dunne {
+        margin-top: 10px;
     }
 </style>

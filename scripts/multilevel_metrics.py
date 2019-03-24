@@ -3,6 +3,7 @@
 
 from geometric import *
 from shapely.geometry import *
+from shapely.ops import cascaded_union
 import math
 import json
 import os
@@ -43,6 +44,8 @@ def get_angle_quadratic_func(alpha):
     print('beta for quadratic angle function: {:.2f}  coefficient for quadratic angle function: {:.2f}'.format(beta, k))
     return lambda x: k * math.pow(x, 2) + alpha * math.pow(math.pi, 2) / 4
 
+def div_or_zero(a, b):
+    return 0 if b == 0 else a / b
 
 # a decorator for performance timing
 def timeit(func):
@@ -282,6 +285,22 @@ class MultiLevelMetrics:
                 'normalized_penalty': penalty * sprawl
                 }
 
+    def get_dunne_global_node_node_overlap(self):
+        # Compute the node-node overlap in Dunne 15 paper
+        if self.skip_nn_computation:
+            return 0
+        if len(self.leaf_nodes) == 0:
+            return 0
+        geoms = [n['geometry'] for n in self.leaf_nodes]
+        geom_area = [g.area for g in geoms]
+        union_shape = cascaded_union(geoms)
+        a = union_shape.area
+        a_max = sum(geom_area)
+        a_delta = max(geom_area)
+        if self.debug:
+            print('a={:.3f}  a_max={:.3f}  a_delta={:.3f}'.format(a, a_max, a_delta))
+        return div_or_zero(a - a_delta, a_max - a_delta)
+
     @timeit
     def get_graph_node_edge_penalty(self):
         penalty = 0
@@ -400,10 +419,11 @@ class MultiLevelMetrics:
     #     return {'total_penalty': penalty, 'total_count': count}
 
     @timeit
-    def get_graph_edge_edge_penalty_naive(self):
+    def get_graph_edge_edge_penalty_naive(self, optimal_angle=math.pi / 2):
         penalty = 0
         count = 0
         total_overlap = 0
+        sum_diff = 0
         # crossings = []
 
         if not self.skip_ee_computation:
@@ -422,12 +442,14 @@ class MultiLevelMetrics:
                                     count += 1
                                     penalty += p
                                     total_overlap += o
+                                    sum_diff += abs(optimal_angle - o)
             # if USE_LOG:
             #     json.dump(crossings, open('test_mine.json', 'w'))
         sprawl = self.total_area / len(self.edges)
         return {'total_penalty': penalty, 'total_count': count, 'sprawl': sprawl,
                 'total_overlap': total_overlap,
-                'normalized_penalty': penalty * sprawl}
+                'normalized_penalty': penalty * sprawl,
+                'dunne_ratio': 1 - div_or_zero(sum_diff, count * optimal_angle)}
 
     def get_total_node_size(self):
         total_node_size = 0
@@ -516,10 +538,10 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
         json_data['parameters'][k] = v
 
     nn = metrics.get_graph_node_node_penalty()
-    # nn = {}
+    nn['dunne_ratio'] = metrics.get_dunne_global_node_node_overlap()
     json_data['metrics']['nn'] = nn
-    print('Node-node penalty: {:.2f}   count: {}  sprawl: {:.2f}  normalized penalty: {:.2f}'
-          .format(nn['total_penalty'], nn['total_count'], nn['sprawl'], nn['normalized_penalty']))
+    print('Node-node penalty: {:.2f}   count: {}  sprawl: {:.2f}  normalized penalty: {:.2f} Dunne ratio: {:.3f}'
+          .format(nn['total_penalty'], nn['total_count'], nn['sprawl'], nn['normalized_penalty'], nn['dunne_ratio']))
     print('Execution time: {:.2f}'.format(nn['execution_time']))
     print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
 
@@ -540,8 +562,8 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     # My naive square time implementation
     ee2 = metrics.get_graph_edge_edge_penalty_naive()
     json_data['metrics']['ee'] = ee2
-    print('Edge-edge penalty (quadratic algorithm): {:.2f}  count: {}  sprawl: {:.2f}  normalized penalty: {:.2f}'
-          .format(ee2['total_penalty'], ee2['total_count'],  ee2['sprawl'], ee2['normalized_penalty']))
+    print('Edge-edge penalty (quadratic algorithm): {:.2f}  count: {}  sprawl: {:.2f}  normalized penalty: {:.2f} Dunne ratio: {:.2f}'
+          .format(ee2['total_penalty'], ee2['total_count'],  ee2['sprawl'], ee2['normalized_penalty'], ee2['dunne_ratio']))
     print('Execution time: {:.2f}'.format(ee2['execution_time']))
 
     json_data['end_time'] = wall_time()
@@ -552,11 +574,11 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
 
 
 if __name__ == '__main__':
-    run_store_print('../../data/four-clusters', 'nn5',
+    run_store_print('../../data/ALL', 'progression-ee-near-glancing',
                     angle_penalty_func_type='quadratic',
                     alpha_nn=0.2, alpha_ne=0.2, alpha_ee=0.2,
                     skip_nn_computation=False,
                     skip_ne_computation=False,
                     skip_ee_computation=False,
                     skip_AS_metrics=False, skip_level_breakdown=False,
-                    debug=True)
+                    debug=False)

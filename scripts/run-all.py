@@ -62,8 +62,8 @@ files = [
          'progression-ee-near-glancing',
          'progression-ee-glancing',
          
-         'midsize-handmade1-1',
-         'midsize-handmade1-100',
+         # 'midsize-handmade1-1',
+         # 'midsize-handmade1-100',
          
          'coauthor-main-comp-gem',
          'coauthor-main-comp-grouseflocks-0',

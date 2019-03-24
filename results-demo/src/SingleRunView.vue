@@ -21,13 +21,14 @@
     import axios from 'axios';
 
     export default {
-        name: 'app',
+        name: 'SingleRunView',
         components: {
             ComparisonView
         },
         data: () => ({results: [], dataPath: null, timestamp: null, parameters: null}),
         mounted() {
-            let dataPath = `/data${window.location.pathname}`;
+            let runName = window.location.pathname.split('/')[2];
+            let dataPath = `/data/${runName}`;
             axios.get(`${dataPath}/graphs.txt`).then(response => {
                 let graphNames = response.data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 console.log(graphNames);
