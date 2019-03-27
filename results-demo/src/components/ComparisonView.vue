@@ -97,7 +97,7 @@
                 // {key: 'neCount', label: 'Node-edge Count'},
                 // {key: 'eePenalty', label: 'Edge-edge Penalty', formatter: 'fixedPrecision'},
                 // {key: 'eeCount', label: 'Edge-edge Count'},
-                {key: 'executionTime', label: 'Execution Time (s) (NN+NE+EE=ALL)'},
+                // {key: 'executionTime', label: 'Execution Time (s) (NN+NE+EE=ALL)'},
                 ]
         }),
         computed: {

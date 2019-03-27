@@ -1,0 +1,61 @@
+\begin{tabular}{l|rrr|rrr|rrr}
+\toprule
+& \multicolumn{3}{c|}{NN} & \multicolumn{3}{c|}{NE} & \multicolumn{3}{c}{EE} \\
+                         Layout &     AS &  count & slowdown &      AS &  count & slowdown &       AS &   count & ratio \\
+\midrule
+              four-clusters-ne0 &   0.01 &   0.01 &       NA &    0.09 &   0.09 &       NA &     0.13 &    0.12 &    NA \\
+              four-clusters-ne1 &   0.01 &   0.01 &       NA &    0.11 &   0.10 &       NA &     0.18 &    0.15 &    NA \\
+              four-clusters-nn0 &   0.01 &   0.01 &       NA &    0.09 &   0.09 &       NA &     0.13 &    0.12 &    NA \\
+              four-clusters-nn1 &   0.01 &   0.01 &       NA &    0.10 &   0.10 &       NA &     0.13 &    0.12 &    NA \\
+              four-clusters-nn2 &   0.02 &   0.01 &       NA &    0.12 &   0.09 &       NA &     0.14 &    0.11 &    NA \\
+              four-clusters-nn4 &   0.01 &   0.01 &       NA &    0.11 &   0.07 &       NA &     0.13 &    0.10 &    NA \\
+          four-clusters-sprawl0 &   0.01 &   0.01 &       NA &    0.10 &   0.07 &       NA &     0.16 &    0.12 &    NA \\
+          four-clusters-sprawl1 &   0.01 &   0.01 &       NA &    0.08 &   0.07 &       NA &     0.12 &    0.11 &    NA \\
+              four-clusters-ee0 &   0.01 &   0.01 &       NA &    0.10 &   0.08 &       NA &     0.17 &    0.12 &    NA \\
+      four-clusters-ee-glancing &   0.01 &   0.01 &       NA &    0.10 &   0.07 &       NA &     0.16 &    0.11 &    NA \\
+                special-cases-1 &   0.00 &   0.00 &       NA &    0.01 &   0.01 &       NA &     0.01 &    0.01 &    NA \\
+                special-cases-2 &   0.00 &   0.00 &       NA &    0.02 &   0.01 &       NA &     0.01 &    0.01 &    NA \\
+                special-cases-3 &   0.02 &   0.01 &       NA &    0.08 &   0.07 &       NA &     0.10 &    0.08 &    NA \\
+                special-cases-4 &   0.01 &   0.01 &       NA &    0.08 &   0.07 &       NA &     0.11 &    0.08 &    NA \\
+                special-cases-5 &   0.01 &   0.01 &       NA &    0.06 &   0.05 &       NA &     0.06 &    0.04 &    NA \\
+                special-cases-6 &   0.00 &   0.00 &       NA &    0.00 &   0.00 &       NA &     0.00 &    0.00 &    NA \\
+                special-cases-7 &   0.00 &   0.00 &       NA &    0.00 &   0.00 &       NA &     0.00 &    0.00 &    NA \\
+            progression-nn-none &   0.01 &   0.01 &       NA &    0.08 &   0.07 &       NA &     0.11 &    0.10 &    NA \\
+      progression-nn-touch-leaf &   0.01 &   0.01 &       NA &    0.07 &   0.06 &       NA &     0.11 &    0.09 &    NA \\
+      progression-nn-touch-meta &   0.01 &   0.01 &       NA &    0.07 &   0.06 &       NA &     0.11 &    0.07 &    NA \\
+       progression-nn-some-leaf &   0.01 &   0.01 &       NA &    0.08 &   0.07 &       NA &     0.11 &    0.10 &    NA \\
+       progression-nn-some-meta &   0.01 &   0.01 &       NA &    0.09 &   0.08 &       NA &     0.13 &    0.11 &    NA \\
+   progression-nn-near-max-leaf &   0.01 &   0.01 &       NA &    0.09 &   0.08 &       NA &     0.13 &    0.10 &    NA \\
+   progression-nn-near-max-meta &   0.02 &   0.01 &       NA &    0.16 &   0.10 &       NA &     0.18 &    0.12 &    NA \\
+      progression-ne-touch-leaf &   0.01 &   0.01 &       NA &    0.09 &   0.07 &       NA &     0.12 &    0.10 &    NA \\
+      progression-ne-touch-meta &   0.01 &   0.01 &       NA &    0.08 &   0.07 &       NA &     0.13 &    0.09 &    NA \\
+       progression-ne-some-leaf &   0.01 &   0.01 &       NA &    0.08 &   0.06 &       NA &     0.11 &    0.09 &    NA \\
+       progression-ne-some-meta &   0.01 &   0.01 &       NA &    0.08 &   0.05 &       NA &     0.12 &    0.07 &    NA \\
+   progression-ne-near-max-leaf &   0.01 &   0.01 &       NA &    0.07 &   0.05 &       NA &     0.11 &    0.06 &    NA \\
+   progression-ne-near-max-meta &   0.01 &   0.01 &       NA &    0.09 &   0.06 &       NA &     0.16 &    0.08 &    NA \\
+           progression-ee-ortho &   0.00 &   0.00 &       NA &    0.00 &   0.00 &       NA &     0.00 &    0.00 &    NA \\
+            progression-ee-half &   0.00 &   0.00 &       NA &    0.00 &   0.00 &       NA &     0.00 &    0.00 &    NA \\
+   progression-ee-near-glancing &   0.00 &   0.00 &       NA &    0.00 &   0.00 &       NA &     0.00 &    0.00 &    NA \\
+        progression-ee-glancing &   0.00 &   0.00 &       NA &    0.00 &   0.00 &       NA &     0.00 &    0.00 &    NA \\
+        coauthor-grouseflocks-0 &   0.01 &   0.01 &       NA &    0.32 &   0.15 &       NA &     0.62 &    0.33 &    NA \\
+        coauthor-grouseflocks-1 &   0.02 &   0.01 &       NA &    0.37 &   0.19 &       NA &     0.57 &    0.38 &    NA \\
+        coauthor-grouseflocks-2 &   0.03 &   0.03 &       NA &    1.26 &   0.76 &       NA &     3.03 &    1.73 &  1.75 \\
+                   coauthor-gem &  16.79 &  10.71 &     1.57 &  183.79 & 121.94 &     1.51 &   568.49 &  358.22 &  1.59 \\
+                 coauthor-koala &  16.65 &  12.17 &     1.37 &  266.88 & 182.13 &     1.47 &  1282.29 &  673.05 &  1.91 \\
+      snap-email-grouseflocks-1 &   0.02 &   0.01 &       NA &    2.68 &   1.58 &     1.69 &    60.08 &   23.98 &  2.51 \\
+      snap-email-grouseflocks-2 &   0.05 &   0.02 &       NA &    8.83 &   4.30 &     2.05 &   269.47 &   95.30 &  2.83 \\
+                 snap-email-gem &   6.83 &   5.24 &     1.30 &  283.57 & 193.57 &     1.46 &  5623.58 & 2496.53 &  2.25 \\
+               snap-email-koala &   6.91 &   4.73 &     1.46 &  444.98 & 279.89 &     1.59 & 12812.49 & 4389.76 &  2.92 \\
+       ivOrigins-grouseflocks-2 &   0.02 &   0.01 &       NA &    0.31 &   0.18 &       NA &     1.73 &    1.07 &  1.62 \\
+       ivOrigins-grouseflocks-4 &   0.00 &   0.00 &       NA &    0.05 &   0.04 &       NA &     0.04 &    0.03 &    NA \\
+                  ivOrigins-gem &   0.07 &   0.06 &       NA &    0.83 &   0.73 &       NA &     3.53 &    2.49 &  1.42 \\
+                ivOrigins-koala &   0.07 &   0.07 &       NA &    1.43 &   1.25 &     1.14 &     8.86 &    4.11 &  2.15 \\
+ partition-add32-grouseflocks-0 &   0.29 &   0.21 &       NA &    1.68 &   1.31 &     1.28 &     1.47 &    0.99 &    NA \\
+ partition-add32-grouseflocks-1 &   0.35 &   0.25 &       NA &    2.68 &   1.96 &     1.37 &     2.56 &    1.53 &  1.68 \\
+ partition-add32-grouseflocks-5 &   0.77 &   0.64 &       NA &    7.15 &   4.43 &     1.61 &     7.99 &    4.55 &  1.76 \\
+            partition-add32-fm3 & 175.47 & 136.99 &     1.28 &  676.43 & 522.95 &     1.29 &   688.21 &  406.39 &  1.69 \\
+          partition-add32-koala & 175.91 & 104.78 &     1.68 & 1023.85 & 745.41 &     1.37 &  2173.83 & 1255.65 &  1.73 \\
+\midrule
+\textbf{average} & & & 1.44 & & & 1.49 & & & 1.99 \\
+\bottomrule
+\end{tabular}
