@@ -9,7 +9,7 @@ import json
 import os
 from time import process_time as timer
 from time import time as wall_time
-from poly_point_isect import isect_segments_include_segments
+# from poly_point_isect import isect_segments_include_segments
 
 
 USE_LOG = False
@@ -59,7 +59,7 @@ def timeit(func):
     return timed
 
 
-class MultiLevelMetrics:
+class ASMetrics:
 
     def __init__(self, json_path,
                  alpha_nn=0.2,
@@ -347,44 +347,8 @@ class MultiLevelMetrics:
                 'normalized_penalty': penalty * sprawl
                 }
 
-    @timeit
-    def get_graph_edge_edge_penalty(self):
-        penalty = 0
-        count = 0
-        crossings = []
-        # penalty_lvl = self.get_initial_level_table(True, False)
-        # count_lvl = self.get_initial_level_table(True, False)
-
-        s = timer()
-        intersections = isect_segments_include_segments(self.edges_isect)
-        e = timer()
-        print('B-O takes ', e - s, 'seconds')
-        print('# intersection points: ', len(intersections))
-        if USE_LOG:
-            json.dump(intersections, open('intersections.json', 'w'))
-        if self.debug:
-            print(intersections)
-        for isect in intersections:
-            segments = isect[1]
-            # There might be multiple line segments intersect at the same point
-            for i in range(len(segments) - 1):
-                for j in range(i + 1, len(segments)):
-                    angle = get_angle_between_line_segments_v2(segments[i], segments[j])
-                    p = self.angle_penalty_func(angle)
-                    crossings.append((segments[i][0], segments[j][1]))
-                    count += 1
-                    penalty += p
-
-                    if self.debug:
-                        # we cannot find out the edge id easily b/c use of 3rd party lib
-                        print('Edge xx intersects with edge xx: angle {} (deg) penalty {}'.format(angle * 180 / math.pi, p))
-
-        if USE_LOG:
-            json.dump(crossings, open('test_bo.json', 'w'))
-        return {'total_penalty': penalty, 'total_count': count}
-
     # @timeit
-    # def get_graph_edge_edge_penalty_naive_v2(self):
+    # def get_graph_edge_edge_penalty(self):
     #     penalty = 0
     #     count = 0
     #     crossings = []
@@ -392,11 +356,12 @@ class MultiLevelMetrics:
     #     # count_lvl = self.get_initial_level_table(True, False)
     #
     #     s = timer()
-    #     intersections = isect_segments__naive(self.edges_isect)
+    #     intersections = isect_segments_include_segments(self.edges_isect)
     #     e = timer()
+    #     print('B-O takes ', e - s, 'seconds')
     #     print('# intersection points: ', len(intersections))
     #     if USE_LOG:
-    #         json.dump(intersections, open('intersections_naive_v2.json', 'w'))
+    #         json.dump(intersections, open('intersections.json', 'w'))
     #     if self.debug:
     #         print(intersections)
     #     for isect in intersections:
@@ -406,7 +371,7 @@ class MultiLevelMetrics:
     #             for j in range(i + 1, len(segments)):
     #                 angle = get_angle_between_line_segments_v2(segments[i], segments[j])
     #                 p = self.angle_penalty_func(angle)
-    #                 crossings.append((segments[i][2], segments[j][2]))
+    #                 crossings.append((segments[i][0], segments[j][1]))
     #                 count += 1
     #                 penalty += p
     #
@@ -415,7 +380,7 @@ class MultiLevelMetrics:
     #                     print('Edge xx intersects with edge xx: angle {} (deg) penalty {}'.format(angle * 180 / math.pi, p))
     #
     #     if USE_LOG:
-    #         json.dump(crossings, open('test_naive_v2.json', 'w'))
+    #         json.dump(crossings, open('test_bo.json', 'w'))
     #     return {'total_penalty': penalty, 'total_count': count}
 
     @timeit
@@ -504,7 +469,7 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     else:
         json_path = os.path.join(output_dir, filename + '_result.json')
 
-    metrics = MultiLevelMetrics(data_path, **metrics_args)
+    metrics = ASMetrics(data_path, **metrics_args)
     number_of_metanodes = len(metrics.metanodes.keys())
     if str(metrics.root) in metrics.metanodes:
         number_of_metanodes -= 1

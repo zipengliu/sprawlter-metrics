@@ -109,3 +109,4 @@ venv.bak/
 *.lock
 
 *.ipynb
+.DS_Store

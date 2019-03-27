@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from multilevel_metrics import run_store_print
+from as_metrics import run_store_print
 import argparse
 
 parser = argparse.ArgumentParser()
