@@ -530,9 +530,6 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
         'start_time': wall_time(),
         'metrics': {},
         'parameters': {},
-        # This one is telling the frontend whether the results are using density or sprawl (old versions use density)
-        # Eventually remove this switch before submission  TODO
-        'use_sprawl': True,
     }
     for k, v in metrics_args.items():
         json_data['parameters'][k] = v
@@ -560,7 +557,8 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     #       .format(ee['total_penalty'], ee['total_count'], ee['execution_time']))
 
     # My naive square time implementation
-    ee2 = metrics.get_graph_edge_edge_penalty_naive()
+    # Use 70 degree as optimal angle
+    ee2 = metrics.get_graph_edge_edge_penalty_naive(optimal_angle=math.pi / 180 * 70)
     json_data['metrics']['ee'] = ee2
     print('Edge-edge penalty (quadratic algorithm): {:.2f}  count: {}  sprawl: {:.2f}  normalized penalty: {:.2f} Dunne ratio: {:.2f}'
           .format(ee2['total_penalty'], ee2['total_count'],  ee2['sprawl'], ee2['normalized_penalty'], ee2['dunne_ratio']))
@@ -574,11 +572,11 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
 
 
 if __name__ == '__main__':
-    run_store_print('../../data/ALL', 'progression-ee-near-glancing',
+    run_store_print('../../data/ALL', 'progression-ee-half',
                     angle_penalty_func_type='quadratic',
                     alpha_nn=0.2, alpha_ne=0.2, alpha_ee=0.2,
                     skip_nn_computation=False,
                     skip_ne_computation=False,
                     skip_ee_computation=False,
                     skip_AS_metrics=False, skip_level_breakdown=False,
-                    debug=False)
+                    debug=True)
