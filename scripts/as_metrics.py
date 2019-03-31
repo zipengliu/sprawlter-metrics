@@ -44,14 +44,8 @@ def get_angle_quadratic_func(alpha):
     print('beta for quadratic angle function: {:.2f}  coefficient for quadratic angle function: {:.2f}'.format(beta, k))
     return lambda x: k * math.pow(x, 2) + alpha * math.pow(math.pi, 2) / 4
 
-
 def div_or_zero(a, b):
     return 0 if b == 0 else a / b
-
-
-def sa_product(s, a):
-    return s * max(a, 1.0)
-
 
 # a decorator for performance timing
 def timeit(func):
@@ -65,7 +59,7 @@ def timeit(func):
     return timed
 
 
-class SAMetrics:
+class ASMetrics:
 
     def __init__(self, json_path,
                  alpha_nn=0.2,
@@ -77,16 +71,14 @@ class SAMetrics:
                  skip_nn_computation=False,
                  skip_ne_computation=False,
                  skip_ee_computation=False,
-                 skip_SA_metrics=False,
-                 skip_Dunne_metrics=False,
+                 skip_AS_metrics=False,
                  skip_level_breakdown=False,
                  debug=False):
         self.debug = debug
         self.skip_nn_computation = skip_nn_computation
         self.skip_ne_computation = skip_ne_computation
         self.skip_ee_computation = skip_ee_computation
-        self.skip_SA_metrics = skip_SA_metrics
-        self.skip_Dunne_metrics = skip_Dunne_metrics
+        self.skip_AS_metrics = skip_AS_metrics
         self.skip_level_breakdown = skip_level_breakdown
 
         # Import the coordinates of graph elements
@@ -146,10 +138,9 @@ class SAMetrics:
     def normalize_edge_length(self):
         # make sure to initialize to a non-zero number
         s = self.total_edge_length + 1
-        # Do not use the shortest edge as it get can really short!
-        # for e in self.edges:
-        #     if e['geometry'].length > 0:
-        #         s = min(s, e['geometry'].length)
+        for e in self.edges:
+            if e['geometry'].length > 0:
+                s = min(s, e['geometry'].length)
         for n in self.leaf_nodes:
             s = min(s, n['diameter'])
         for _, mn in self.metanodes.items():
@@ -190,7 +181,7 @@ class SAMetrics:
         geom_v = v['geometry']
         geom_e = e['geometry']
         if geom_v.intersects(geom_e):
-            if self.skip_SA_metrics:
+            if self.skip_AS_metrics:
                 return True, 0, 0
             isect = geom_v.intersection(geom_e)
             normalized_overlap = isect.length / self.min_edge_length
@@ -209,7 +200,7 @@ class SAMetrics:
         geom1 = v1['geometry']
         geom2 = v2['geometry']
         if geom1.intersects(geom2):
-            if self.skip_SA_metrics:
+            if self.skip_AS_metrics:
                 return True, 0, 0
             isect = geom1.intersection(geom2)
             norm_isect_area = isect.area / self.min_node_size
@@ -233,7 +224,7 @@ class SAMetrics:
         #     return False, 0
 
         if geom1.intersects(geom2):
-            if self.skip_SA_metrics:
+            if self.skip_AS_metrics:
                 return True, 0, 0
             angle = get_angle_between_line_segments(geom1, geom2)
             # use the complementary of crossing angle!
@@ -291,12 +282,12 @@ class SAMetrics:
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl, 'total_overlap': total_overlap,
                 'sprawl': sprawl,
-                'sa': sa_product(sprawl, penalty)
+                'normalized_penalty': penalty * sprawl
                 }
 
     def get_dunne_global_node_node_overlap(self):
         # Compute the node-node overlap in Dunne 15 paper
-        if self.skip_nn_computation or self.skip_Dunne_metrics:
+        if self.skip_nn_computation:
             return 0
         if len(self.leaf_nodes) == 0:
             return 0
@@ -353,7 +344,7 @@ class SAMetrics:
         return {'total_penalty': penalty, 'penalty_by_level': penalty_lvl,
                 'total_count': count, 'count_by_level': count_lvl, 'total_overlap': total_overlap,
                 'sprawl': sprawl,
-                'sa': sa_product(sprawl, penalty)
+                'normalized_penalty': penalty * sprawl
                 }
 
     # @timeit
@@ -398,6 +389,7 @@ class SAMetrics:
         count = 0
         total_overlap = 0
         sum_diff = 0
+        # crossings = []
 
         if not self.skip_ee_computation:
             # between leaf edges
@@ -411,14 +403,17 @@ class SAMetrics:
                             if s not in e2['ends'] and t not in e2['ends']:
                                 is_intersect, p, o = self.get_edge_edge_penalty(e1, e2)
                                 if is_intersect:
+                                    # crossings.append((e1['id'], e2['id']))
                                     count += 1
                                     penalty += p
                                     total_overlap += o
                                     sum_diff += abs(optimal_angle - o)
+            # if USE_LOG:
+            #     json.dump(crossings, open('test_mine.json', 'w'))
         sprawl = self.total_area / len(self.edges)
         return {'total_penalty': penalty, 'total_count': count, 'sprawl': sprawl,
                 'total_overlap': total_overlap,
-                'sa': sa_product(sprawl, penalty),
+                'normalized_penalty': penalty * sprawl,
                 'dunne_ratio': 1 - div_or_zero(sum_diff, count * optimal_angle)}
 
     def get_total_node_size(self):
@@ -474,7 +469,7 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     else:
         json_path = os.path.join(output_dir, filename + '_result.json')
 
-    metrics = SAMetrics(data_path, **metrics_args)
+    metrics = ASMetrics(data_path, **metrics_args)
     number_of_metanodes = len(metrics.metanodes.keys())
     if str(metrics.root) in metrics.metanodes:
         number_of_metanodes -= 1
@@ -508,7 +503,7 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     nn['dunne_ratio'] = metrics.get_dunne_global_node_node_overlap()
     json_data['metrics']['nn'] = nn
     print('Node-node penalty: {:.2f}   count: {}  sprawl: {:.2f}  normalized penalty: {:.2f} Dunne ratio: {:.3f}'
-          .format(nn['total_penalty'], nn['total_count'], nn['sprawl'], nn['sa'], nn['dunne_ratio']))
+          .format(nn['total_penalty'], nn['total_count'], nn['sprawl'], nn['normalized_penalty'], nn['dunne_ratio']))
     print('Execution time: {:.2f}'.format(nn['execution_time']))
     print_by_level(nn['penalty_by_level'], nn['count_by_level'], True)
 
@@ -516,7 +511,7 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     # ne = {}
     json_data['metrics']['ne'] = ne
     print('Node-edge penalty: {:.2f}   count: {}  sprawl: {:.2f}  normalized penalty: {:.2f}'
-          .format(ne['total_penalty'], ne['total_count'], ne['sprawl'], ne['sa']))
+          .format(ne['total_penalty'], ne['total_count'], ne['sprawl'], ne['normalized_penalty']))
     print('Execution time: {:.2f}'.format(ne['execution_time']))
     print_by_level(ne['penalty_by_level'], ne['count_by_level'], False)
 
@@ -531,7 +526,7 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
     ee2 = metrics.get_graph_edge_edge_penalty_naive(optimal_angle=math.pi / 180 * 70)
     json_data['metrics']['ee'] = ee2
     print('Edge-edge penalty (quadratic algorithm): {:.2f}  count: {}  sprawl: {:.2f}  normalized penalty: {:.2f} Dunne ratio: {:.2f}'
-          .format(ee2['total_penalty'], ee2['total_count'],  ee2['sprawl'], ee2['sa'], ee2['dunne_ratio']))
+          .format(ee2['total_penalty'], ee2['total_count'],  ee2['sprawl'], ee2['normalized_penalty'], ee2['dunne_ratio']))
     print('Execution time: {:.2f}'.format(ee2['execution_time']))
 
     json_data['end_time'] = wall_time()
@@ -542,13 +537,11 @@ def run_store_print(file_dir, filename, output_dir=None, **metrics_args):
 
 
 if __name__ == '__main__':
-    run_store_print('../../data/ALL', 'four-clusters-nn3',
+    run_store_print('../../data/ALL', 'progression-ee-half',
                     angle_penalty_func_type='quadratic',
                     alpha_nn=0.2, alpha_ne=0.2, alpha_ee=0.2,
                     skip_nn_computation=False,
                     skip_ne_computation=False,
                     skip_ee_computation=False,
-                    skip_SA_metrics=False,
-                    skip_Dunne_metrics=False,
-                    skip_level_breakdown=False,
+                    skip_AS_metrics=False, skip_level_breakdown=False,
                     debug=True)
