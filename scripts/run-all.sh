@@ -40,8 +40,8 @@ run_all_metrics()
 export -f run_all_metrics
 
 
-parallel --jobs 3 run_alpha_nn ::: 0.01 0.2 0.4 0.6 0.8 0.99
+#parallel --jobs 3 run_alpha_nn ::: 0.01 0.2 0.4 0.6 0.8 0.99
 #parallel --jobs 2 run_alpha_ee ::: 0.01 0.07 0.13 0.20 0.26 0.328
 
-#parallel --jobs 4 run_all_metrics ::: 1
+parallel --jobs 4 run_all_metrics ::: 1
 

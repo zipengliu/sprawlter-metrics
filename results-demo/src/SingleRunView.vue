@@ -3,9 +3,9 @@
         <h3 v-if="dataPath">
            {{ dataPath.replace('/data/', '') }}
         </h3>
-        <div class="timestamp" v-if="timestamp">
-            Time: {{ timestamp.toString() }}
-        </div>
+        <!--<div class="timestamp" v-if="timestamp">-->
+            <!--Time: {{ timestamp.toString() }}-->
+        <!--</div>-->
         <div class="parameters" v-if="parameters">
             Parameters: {{ JSON.stringify(parameters) }}
         </div>
