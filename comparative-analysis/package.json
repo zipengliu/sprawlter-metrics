@@ -1,0 +1,25 @@
+{
+  "name": "comparative-analysis",
+  "version": "1.0.0",
+  "description": "My legendary Nuxt.js project",
+  "author": "XXX",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt",
+    "build": "nuxt build",
+    "start": "nuxt start",
+    "generate": "nuxt generate"
+  },
+  "dependencies": {
+    "@nuxtjs/axios": "^5.3.6",
+    "bootstrap": "^4.1.3",
+    "bootstrap-vue": "^2.0.0-rc.11",
+    "cross-env": "^5.2.0",
+    "fs": "^0.0.1-security",
+    "numeral": "^2.0.6",
+    "nuxt": "^2.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^1.18.9"
+  }
+}
