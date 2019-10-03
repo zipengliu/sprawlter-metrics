@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from sa_metrics import run_store_print
+from sc_metrics import run_store_print
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -13,7 +13,7 @@ parser.add_argument('--ee', choices=['linear', 'quadratic'], default='linear')
 parser.add_argument('--skip_nn_computation', default=False, action='store_true')
 parser.add_argument('--skip_ne_computation', default=False, action='store_true')
 parser.add_argument('--skip_ee_computation', default=False, action='store_true')
-parser.add_argument('--skip_SA_metrics', default=False, action='store_true')
+parser.add_argument('--skip_area_computation', default=False, action='store_true')
 parser.add_argument('--skip_Dunne_metrics', default=False, action='store_true')
 parser.add_argument('--skip_level_breakdown', default=False, action='store_true')
 parser.add_argument('--debug', default=False, action='store_true')
@@ -61,6 +61,11 @@ files = [
          'progression-ee-half',
          'progression-ee-near-glancing',
          'progression-ee-glancing',
+
+         'varied-davidson-harel',
+         'varied-linlog',
+         'varied-fast-multipole-emb',
+         'varied-stress-majorization',
          
          # 'midsize-handmade1-1',
          # 'midsize-handmade1-100',
@@ -129,7 +134,7 @@ for f in files:
                     skip_nn_computation=args.skip_nn_computation,
                     skip_ne_computation=args.skip_ne_computation,
                     skip_ee_computation=args.skip_ee_computation,
-                    skip_SA_metrics=args.skip_SA_metrics,
+                    skip_area_computation=args.skip_area_computation,
                     skip_Dunne_metrics=args.skip_Dunne_metrics,
                     skip_level_breakdown=args.skip_level_breakdown,
                     debug=args.debug)

@@ -13,11 +13,16 @@
             <template slot="image" slot-scope="data">
                 <img class="graph-image" v-bind:src="data.item.imagePath" alt="">
             </template>
-            <template slot="nn" slot-scope="data">
+          <template slot="sprawl" slot-scope="data">
+            <div class="metrics">
+              <div>S={{ fixedPrecision(data.item.metrics.sprawl) }}</div>
+              <div>b-box area={{ fixedPrecision(data.item.area) }}</div>
+            </div>
+          </template>
+          <template slot="nn" slot-scope="data">
                 <div class="metrics">
                     <div class="highlight">A={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.nn.penalty_by_level)) }}={{ fixedPrecision(data.item.nnPenalty) }}</div>
-                    <div>S={{ fixedPrecision(data.item.metrics.nn.sprawl) }}</div>
-                    <div>SA={{ fixedPrecision(data.item.metrics.nn.sa) }}</div>
+                    <div>Sprawlter={{ fixedPrecision(data.item.metrics.nn.sc) }}</div>
 
                     <div class="count highlight">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.nn.count_by_level)) }}={{ data.item.nnCount }}</div>
                     <div>A/C={{ pc_ratio(data.item.metrics, 'nn') }}</div>
@@ -31,8 +36,7 @@
             <template slot="ne" slot-scope="data">
                 <div class="metrics">
                     <div class="highlight">A={{ penalty_levels_repr(breakdown_by_level(data.item.metrics.ne.penalty_by_level)) }}={{ fixedPrecision(data.item.nePenalty) }}</div>
-                    <div>S={{ fixedPrecision(data.item.metrics.ne.sprawl) }}</div>
-                    <div>SA={{ fixedPrecision(data.item.metrics.ne.sa) }}</div>
+                    <div>Sprawlter={{ fixedPrecision(data.item.metrics.ne.sc) }}</div>
 
                     <div class="count highlight">C={{ count_levels_repr(breakdown_by_level(data.item.metrics.ne.count_by_level)) }}={{ data.item.neCount }}</div>
                     <div>A/C={{ pc_ratio(data.item.metrics, 'ne') }}</div>
@@ -42,23 +46,17 @@
             <template slot="ee" slot-scope="data">
                 <div class="metrics">
                     <div class="highlight">A={{ fixedPrecision(data.item.eePenalty) }}</div>
-                    <div class="count highlight">C={{ data.item.eeCount }}</div>
+                  <div>Sprawlter={{ fixedPrecision(data.item.metrics.ee.sc) }}</div>
 
-                    <div>S={{ fixedPrecision(data.item.metrics.ee.sprawl) }}</div>
-                    <div>SA={{ fixedPrecision(data.item.metrics.ee.sa) }}</div>
+                  <div class="count highlight">C={{ data.item.eeCount }}</div>
 
                     <div>A/C={{ pc_ratio(data.item.metrics, 'ee') }}</div>
                     <!--<div>SA/C={{ norm_pc_ratio(data.item.metrics, 'ee') }}</div>-->
-                    <div v-if="data.item.avrAngle !== 'NA'">avr angle={{ data.item.avrAngle }}</div>
+                    <div v-if="data.item.avrAngle !== 'NA'">avg. angle={{ data.item.avrAngle }}</div>
 
                     <div v-if="data.item.metrics.ee.hasOwnProperty('dunne_ratio')" class="dunne">
                         Dunne's ratio={{ fixedPrecision(data.item.metrics.ee.dunne_ratio, 2, true) }}
                     </div>
-                </div>
-            </template>
-            <template slot="area" slot-scope="data">
-                <div class="metrics">
-                    <div>{{ fixedPrecision(data.item.area) }}</div>
                 </div>
             </template>
             <template slot="executionTime" slot-scope="data">
@@ -81,10 +79,10 @@
             fields: [
                 {key: 'name', label: 'Graph'},
                 {key: 'image', label: 'Image'},
+                {key: 'sprawl', label: 'Sprawl'},
                 {key: 'nn', label: 'Node-node'},
                 {key: 'ne', label: 'Node-edge'},
                 {key: 'ee', label: 'Edge-edge'},
-                {key: 'area', label: 'Area (min bbox)'},
                 // {key: 'executionTime', label: 'Execution Time (s) (NN+NE+EE=ALL)'},
                 ]
         }),
