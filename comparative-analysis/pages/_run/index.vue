@@ -11,7 +11,7 @@
       <!--Parameters: {{ JSON.stringify(parameters) }}-->
     <!--</div>-->
     <div class="legends">
-      Legends: A for area-aware metric, S for sprawl ratio, SA for SA metric, C for count.  A and C are broken down by metanode + leafnode.
+      Legends: A for area-aware metric, S for sprawl ratio, C for count,  A/C is the average penalty.  A and C are broken down by metanode + leafnode.
     </div>
 
     <ComparisonTable :results="results" :parameters="parameters" />

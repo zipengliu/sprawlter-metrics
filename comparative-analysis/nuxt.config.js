@@ -63,6 +63,6 @@ export default {
   },
 
   generate: {
-    routes: ['/all-metrics']
+    routes: ['/all-metrics-1']
   }
 }
